@@ -38,8 +38,15 @@ MODEL_OPTION = "[role='menuitemradio']"
 SEARCH_URL_MARKER = "/search/"
 
 # Logged-out probe: the sidebar's bottom item reads "Sign In" (a plain <div>, not an anchor), so
-# match by text rather than tag/attribute.
+# match by text rather than tag/attribute. Used by `wait_for_answer` to detect a login wall
+# mid-run; the logged-in probe itself uses the positive bell marker below.
 LOGIN_BUTTON = "text=Sign In"
+
+# Logged-in marker: the notification bell (`#pplx-icon-bell`) only renders for authenticated
+# users. Its `<use>` references the icon via `xlink:href`, a *namespaced* attribute — plain
+# `[href=...]` and escaped `[xlink\:href=...]` do NOT match it (verified live); the any-namespace
+# attribute selector `[*|href=...]` does (verified against Camoufox 2026-08-17).
+LOGGED_IN_BELL = "use[*|href='#pplx-icon-bell']"
 
 # The streaming "stop" control (square icon button), confirmed via recon.
 STOP_BUTTON = "button[aria-label='Stop response (Esc)']"
@@ -47,3 +54,17 @@ STOP_BUTTON = "button[aria-label='Stop response (Esc)']"
 # The assistant's answer body: `data-renderer="lm"` marks markdown-rendered content; `.last`
 # picks the most recent assistant message over earlier ones in the thread.
 ANSWER_BODY = "div[data-renderer='lm']"
+
+# Citation chips (verified 2026-08-17): each inline citation is a `<span class="citation-nbsp">`
+# (a nbsp spacer) immediately followed by a `<span data-pplx-citation="" ...>` wrapping the
+# domain-name chip (e.g. "reuters", optionally "+N" for grouped sources). `data-pplx-citation` is
+# a deliberate semantic marker, unlike the churny Tailwind classes around it. Currently unused by
+# `extract_answer` (which copies markdown via the Copy button and strips citations from the
+# string) but kept as verified knowledge for any future DOM-text path.
+CITATION_NODES = "[data-pplx-citation], .citation-nbsp"
+
+# The answer action bar's copy control: copies the answer as markdown. The action bar sits
+# *below* the answer body, so `.last` lands on the latest message's copy even when earlier
+# answers (or embedded code-block copy controls) match the same aria-label.
+COPY_BUTTON = "button[aria-label='Copy']"
+

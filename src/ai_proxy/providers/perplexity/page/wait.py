@@ -25,21 +25,20 @@ import time
 
 from playwright.async_api import Page
 
-from ai_proxy.core.errors import AuthError, GenerationTimeoutError, QuotaExceededError
+from ai_proxy.core.errors import GenerationTimeoutError
 from ai_proxy.providers.perplexity.page import selectors as sel
 
 _POLL_INTERVAL_SECONDS = 0.25
 _SETTLE_POLL_INTERVAL_SECONDS = 0.2
 _SETTLE_TIMEOUT_SECONDS = 5.0
 
-
-def _classify_error(message: str) -> Exception:
-    lowered = message.lower()
-    if "rate limit" in lowered or "quota" in lowered or "too many" in lowered:
-        return QuotaExceededError(message)
-    if "sign in" in lowered or "log in" in lowered or "session" in lowered:
-        return AuthError(message)
-    return GenerationTimeoutError(message)
+# Text-only (no layout) so it's cheap to run every poll; unlike `extract.extract_answer`'s
+# formatting-faithful version, this only needs to be stable-comparable, not well-formatted.
+_TEXT_SANS_CITATIONS_JS = f"""(el) => {{
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('{sel.CITATION_NODES}').forEach((node) => node.remove());
+  return clone.textContent;
+}}"""
 
 
 async def count_answers(page: Page) -> int:
@@ -68,7 +67,7 @@ async def wait_for_answer(page: Page, *, timeout: float, baseline_count: int = 0
     previous_text: str | None = None
     while time.monotonic() < deadline:
         if await answers.count() > baseline_count and await stop.count() == 0:
-            text = (await answers.last.inner_text()).strip()
+            text = (await answers.last.evaluate(_TEXT_SANS_CITATIONS_JS)).strip()
             if text and text == previous_text:
                 return
             previous_text = text

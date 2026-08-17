@@ -1,7 +1,8 @@
 """Perplexity authentication (AuthHandler).
 
-Confirmed via `scripts/recon_perplexity.py --inspect` (2026-08-17): the logged-out sidebar
-exposes a "Sign In" control that disappears once authenticated.
+Logged-in probe confirmed via `scripts/recon_perplexity.py --inspect` (2026-08-17): the
+notification bell (`#pplx-icon-bell`) renders only for authenticated users; the logged-out
+sidebar instead exposes a "Sign In" control.
 """
 
 from __future__ import annotations
@@ -11,17 +12,41 @@ import time
 from typing import cast
 
 from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_proxy.providers.perplexity.config import PerplexitySettings
 from ai_proxy.providers.perplexity.page import selectors as sel
 
+_NETWORK_IDLE_TIMEOUT_MS = 10_000
+_SETTLE_TIMEOUT_SECONDS = 5.0
+_SETTLE_POLL_SECONDS = 0.5
+
 
 async def probe_logged_in(page: Page) -> bool:
-    """True when the session looks authenticated: on Perplexity with no "Sign In" control."""
+    """True when the session looks authenticated: the notification bell icon is rendered.
+
+    The bell (`use[xlink:href="#pplx-icon-bell"]`) only exists for logged-in users — a
+    *positive* marker, unlike the old "Sign In is absent" check which read 0 right after
+    `domcontentloaded`, before React mounted the sidebar (observed live as
+    `interactive_login` "succeeding" instantly with nothing typed). So wait for the network
+    to settle first, then poll briefly for the bell to appear; if it never does within the
+    settle window, report logged out — a false `needs_login` is cheap to re-check, a false
+    "logged in" silently breaks every run that trusts it.
+    """
     if "perplexity.ai" not in page.url:
         return False
-    return await page.locator(sel.LOGIN_BUTTON).count() == 0
+    try:
+        await page.wait_for_load_state("networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        pass
+    bell = page.locator(sel.LOGGED_IN_BELL)
+    deadline = time.monotonic() + _SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if await bell.count() > 0:
+            return True
+        await asyncio.sleep(_SETTLE_POLL_SECONDS)
+    return False
 
 
 class PerplexityAuth:

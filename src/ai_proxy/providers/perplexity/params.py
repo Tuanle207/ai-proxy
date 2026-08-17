@@ -17,4 +17,3 @@ class PerplexityParams(ProviderParams):
     focus: str | None = None
     model: str | None = None
     search_mode: str | None = None
-    include_citations: bool = True

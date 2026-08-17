@@ -3,7 +3,7 @@
 The page sequence mirrors `GoogleFlowAdapter`:
 `open_thread → submit → wait_for_answer → extract_answer → TaskResult(TEXT artifact)`. `focus`/
 `model`/`search_mode` are validated but not yet applied — they need recon of the corresponding
-controls before the adapter can set them; `include_citations` is honored.
+controls before the adapter can set them.
 """
 
 from __future__ import annotations
@@ -32,25 +32,26 @@ class PerplexityAdapter:
         return cast(PerplexitySettings, self._deps.settings)
 
     async def execute(self, session: ProviderSession, request: TaskRequest) -> TaskResult:
-        params = PerplexityParams.model_validate(request.params)
+        PerplexityParams.model_validate(request.params)
         page = session.page
         if page is None:
             raise RuntimeError("perplexity requires a browser page (ProviderSession.page is None)")
 
         start = time.monotonic()
         await navigate.open_thread(page, request.workspace_ref)
+        baseline_count = await wait.count_answers(page)
         await prompt.submit_prompt(page, request.prompt)
-        await wait.wait_for_answer(page, timeout=request.timeout)
-        answer, citations = await extract.extract_answer(page)
+        await wait.wait_for_answer(page, timeout=request.timeout, baseline_count=baseline_count)
+        answer = await extract.extract_answer(page)
         workspace_ref = await extract.extract_thread_ref(page)
+        if workspace_ref is not None:
+            await session.on_workspace_created(workspace_ref)
 
-        meta = {"citations": citations} if params.include_citations else {}
         artifact = Artifact(
             kind=TaskKind.TEXT,
             mime="text/markdown",
             text=answer,
             bytes=len(answer.encode("utf-8")),
-            meta=meta,
         )
         return TaskResult(
             request=request,

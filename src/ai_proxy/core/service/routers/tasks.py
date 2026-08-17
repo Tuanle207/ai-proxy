@@ -51,6 +51,10 @@ def _validate(body: TaskSubmitRequest, container: ServiceContainer, spec: Provid
             f"count {body.count} exceeds max_outputs_per_request "
             f"{spec.capabilities.max_outputs_per_request}",
         )
+    if body.workspace_ref is not None and len(body.prompts) > 1:
+        raise HTTPException(
+            422, "workspace_ref is only supported for single-prompt requests"
+        )
     try:
         spec.params_model.model_validate(body.params)
     except ValidationError as exc:
@@ -95,7 +99,7 @@ async def submit_task(
             max_attempts=container.settings.job_max_attempts,
             attempted_emails=[],
             account_email=None,
-            workspace_ref=None,
+            workspace_ref=body.workspace_ref,
             error_code=None,
             error_message=None,
             queued_at=now,

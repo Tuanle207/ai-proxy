@@ -102,6 +102,8 @@ class TaskSubmitRequest(BaseModel):
     timeout_seconds: float = Field(default=180.0, gt=0)
     params: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] | None = None
+    # Resume an existing provider workspace/thread; only valid for single-prompt requests.
+    workspace_ref: str | None = None
 
     @field_validator("prompts")
     @classmethod

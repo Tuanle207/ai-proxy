@@ -4,10 +4,11 @@ Status: implementation complete except selector confirmation + live verification
 
 ## Blocked on live recon (user capture)
 
-- [ ] Capture `ANSWER_BODY` — container holding the assistant's answer markdown
-- [ ] Capture `STOP_BUTTON` — the square "stop" control while streaming
-- [ ] Capture `CITATION_LINK` — a source link in the answer's Sources list
-- [ ] Confirm `LOGIN_BUTTON` — logged-out "Log in"/"Sign up" control (text + tag)
+- [x] Capture `ANSWER_BODY` — `div[data-renderer='lm']` (markdown-renderer marker, more stable
+  than the churny Tailwind `prose` classes)
+- [x] Capture `STOP_BUTTON` — `button[aria-label='Stop response (Esc)']`
+- [x] Confirm `LOGIN_BUTTON` — logged-out sidebar shows a "Sign In" `<div>` (text-matched, not
+  an anchor/button): `text=Sign In`
 
 Capture with:
 
@@ -15,13 +16,12 @@ Capture with:
 .venv\Scripts\python scripts\recon_perplexity.py --email <you@example.com> --inspect
 ```
 
-Then: submit a query, click the stop button while streaming (suppressed by the listener),
-click the answer text, click a citation link, and paste the output (includes `html` snippet).
-
 ## After selectors are confirmed
 
-- [ ] Update `src/ai_proxy/providers/perplexity/page/selectors.py` (replace UNVERIFIED constants)
-- [ ] Remove the "UNVERIFIED" markers from `selectors.py` docstring
+- [x] Update `src/ai_proxy/providers/perplexity/page/selectors.py` (replace UNVERIFIED constants)
+- [x] Remove the "UNVERIFIED" markers from `selectors.py` docstring
+- [x] Citation extraction dropped entirely (not needed): removed `CITATION_LINK`,
+  `include_citations`, and `extract_answer`'s citations return value
 
 ## Live verification (P8)
 
@@ -32,4 +32,6 @@ click the answer text, click a citation link, and paste the output (includes `ht
 
 ## Always
 
-- [ ] `pytest -q` · `ruff check src tests scripts` · `mypy --strict src` green
+- [x] `pytest -q` · `ruff check src tests scripts` · `mypy --strict src` green
+  (pinned `numpy<2.3` in `pyproject.toml`: newer numpy stubs use PEP 695 `type` aliases
+  that mypy can't parse under this project's `python_version = "3.11"` setting)

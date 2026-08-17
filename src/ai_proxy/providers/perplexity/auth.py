@@ -1,9 +1,7 @@
 """Perplexity authentication (AuthHandler).
 
-**UNVERIFIED (plan P3.1).** Perplexity supports Google/Apple/email sign-in; the logged-in probe
-assumes the logged-out landing exposes a "Log in" control that disappears once authenticated, and
-that login bounces through an identity provider (so the page is transiently off `perplexity.ai`).
-Confirm both via `scripts/recon_perplexity.py --inspect`.
+Confirmed via `scripts/recon_perplexity.py --inspect` (2026-08-17): the logged-out sidebar
+exposes a "Sign In" control that disappears once authenticated.
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from ai_proxy.providers.perplexity.page import selectors as sel
 
 
 async def probe_logged_in(page: Page) -> bool:
-    """True when the session looks authenticated: on Perplexity with no "Log in" control."""
+    """True when the session looks authenticated: on Perplexity with no "Sign In" control."""
     if "perplexity.ai" not in page.url:
         return False
     return await page.locator(sel.LOGIN_BUTTON).count() == 0

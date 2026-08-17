@@ -62,6 +62,8 @@ _CAPTURE_INSTALL_JS = """() => {
   if (window.__clickHandler) document.removeEventListener('click', window.__clickHandler, true);
   window.__clickHandler = (e) => {
     const el = e.target;
+    const anchor = el.closest('a');
+    const button = el.closest('button');
     window.__captured = {
       tag: el.tagName,
       id: el.id || null,
@@ -73,6 +75,20 @@ _CAPTURE_INSTALL_JS = """() => {
       href: el.getAttribute('href') || null,
       type: el.getAttribute('type') || null,
       html: el.outerHTML ? el.outerHTML.slice(0, 300) : null,
+      closestAnchor: anchor ? {
+        id: anchor.id || null,
+        href: anchor.getAttribute('href') || null,
+        target: anchor.getAttribute('target') || null,
+        aria: anchor.getAttribute('aria-label') || null,
+        cls: typeof anchor.className === 'string' ? anchor.className.slice(0, 160) : null,
+        html: anchor.outerHTML ? anchor.outerHTML.slice(0, 300) : null,
+      } : null,
+      closestButton: button ? {
+        id: button.id || null,
+        aria: button.getAttribute('aria-label') || null,
+        cls: typeof button.className === 'string' ? button.className.slice(0, 160) : null,
+        html: button.outerHTML ? button.outerHTML.slice(0, 300) : null,
+      } : null,
     };
     e.preventDefault();
     e.stopPropagation();

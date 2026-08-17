@@ -56,6 +56,9 @@ def run(
     count: int = typer.Option(1, "--count"),
     timeout: float | None = typer.Option(None, "--timeout"),
     params: list[str] = typer.Option([], "-p", "--param", help="key=value (repeatable)."),
+    workspace_ref: str | None = typer.Option(
+        None, "--workspace-ref", help="Resume an existing workspace/thread (id or full URL)."
+    ),
 ) -> None:
     """Run one prompt against a provider."""
     settings = ctx.obj
@@ -69,9 +72,11 @@ def run(
         count=count,
         timeout=timeout or settings.default_timeout_seconds,
         params=parsed,
+        workspace_ref=workspace_ref,
     )
     result = client.run_sync(request)
     typer.echo(f"Completed {len(result.artifacts)} artifact(s) using {result.account_email}")
+    typer.echo(f"workspace_ref: {result.workspace_ref}")
     for artifact in result.artifacts:
         if artifact.text is not None:
             typer.echo(artifact.text)

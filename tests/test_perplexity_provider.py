@@ -23,8 +23,7 @@ def test_perplexity_params_schema() -> None:
 
     schema = json_schema(PerplexityParams)
     assert schema["additionalProperties"] is False
-    assert set(schema["properties"]) == {"focus", "model", "search_mode", "include_citations"}
-    assert PerplexityParams.model_validate({}).include_citations is True
+    assert set(schema["properties"]) == {"focus", "model", "search_mode"}
     with pytest.raises(ValueError):
         PerplexityParams.model_validate({"aspect_ratio": "16:9"})
 

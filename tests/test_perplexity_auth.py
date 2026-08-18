@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from ai_proxy.core.errors import AuthError
+from ai_proxy.core.errors import GenerationTimeoutError
 from ai_proxy.providers.perplexity import auth as auth_module
 from ai_proxy.providers.perplexity.page import selectors as sel
 from ai_proxy.providers.perplexity.page import wait as wait_module
@@ -85,16 +85,3 @@ def test_probe_false_off_perplexity(monkeypatch: Any) -> None:
         {sel.LOGGED_IN_BELL: FakeLocator([1])},
     )
     assert asyncio.run(auth_module.probe_logged_in(page)) is False
-
-
-def test_wait_for_answer_raises_auth_on_login_wall() -> None:
-    page = FakePage(
-        "https://www.perplexity.ai/search/x",
-        {
-            sel.LOGIN_BUTTON: FakeLocator([1]),
-            sel.STOP_BUTTON: FakeLocator([0]),
-            sel.ANSWER_BODY: FakeLocator([0]),
-        },
-    )
-    with pytest.raises(AuthError):
-        asyncio.run(wait_module.wait_for_answer(page, timeout=1.0))

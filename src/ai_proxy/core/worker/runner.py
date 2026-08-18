@@ -20,7 +20,7 @@ from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Account, Artifact, TaskKind, TaskRequest, TaskResult
 from ai_proxy.core.paths import DataPaths
 from ai_proxy.core.provider.runtime import ProviderRuntime
-from ai_proxy.core.provider.session import Emit, ProviderSession
+from ai_proxy.core.provider.session import Emit, ProviderSession, WorkspaceCreated
 from ai_proxy.core.service.storage import StorageBackend
 from ai_proxy.core.worker.bus import EventBus
 
@@ -59,7 +59,7 @@ class TaskRunner:
             output_dir=self._paths.job_output_dir(job.id, job.queued_at),
             settings=runtime.settings,
             emit=self._emit(job),
-            on_workspace_created=lambda ref: self._jobs.set_workspace_ref(job.id, ref),
+            on_workspace_created=self._on_workspace_created(job),
         )
         request = TaskRequest(
             provider=job.provider,
@@ -72,7 +72,19 @@ class TaskRunner:
             workspace_ref=job.workspace_ref,
         )
         adapter = runtime.adapter
+        _log.info(
+            "task_runner_attempt_start",
+            attempt=job.attempt,
+            workspace_ref=job.workspace_ref,
+            prompt_chars=len(job.prompt),
+            newline_count=job.prompt.count("\n"),
+        )
         result = await adapter.execute(session, request)
+        _log.info(
+            "task_runner_attempt_done",
+            attempt=job.attempt,
+            workspace_ref=result.workspace_ref,
+        )
         await self._persist_artifacts(job, result, account.email)
         await adapter.cleanup(session, result.workspace_ref)
         return result
@@ -84,6 +96,13 @@ class TaskRunner:
             )
 
         return emit
+
+    def _on_workspace_created(self, job: JobRecord) -> WorkspaceCreated:
+        async def on_workspace_created(ref: str) -> None:
+            _log.info("job_workspace_created", job_id=job.id, workspace_ref=ref)
+            await self._jobs.set_workspace_ref(job.id, ref)
+
+        return on_workspace_created
 
     async def _persist_artifacts(
         self, job: JobRecord, result: TaskResult, email: str

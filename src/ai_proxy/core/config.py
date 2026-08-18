@@ -102,13 +102,14 @@ class Settings(BaseSettings):
 
     # --- REST service settings (§7) ---
     api_host: str = "127.0.0.1"
-    api_port: int = 8080
+    api_port: int = 5002
     api_key: str | None = None
     cors_origins: list[str] = []
     max_concurrent_browsers: int = 4
+    browser_idle_ttl_seconds: float = 600.0
     db_path: str | None = None
     max_batch_prompts: int = 100
-    max_prompt_length: int = 2000
+    max_prompt_length: int = 20_000
     job_max_attempts: int = 3
     cooldown_minutes: int = 5
     quota_cooldown_minutes: int = 120

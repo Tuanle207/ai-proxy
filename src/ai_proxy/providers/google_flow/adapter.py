@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Artifact, TaskRequest, TaskResult, WorkspaceRef
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_proxy.core.worker.failure import FailurePolicy
@@ -22,6 +23,8 @@ from ai_proxy.providers.google_flow.page import download, navigate, prompt, wait
 from ai_proxy.providers.google_flow.page.selectors import LOGIN_REDIRECT_HOST
 from ai_proxy.providers.google_flow.params import GoogleFlowParams
 from ai_proxy.providers.google_flow.postprocess import logo_overlay
+
+_log = get_logger()
 
 # Flow's settings panel was only ever observed offering "x1".."x4" (see page/selectors.py).
 _MAX_UI_SUPPORTED_COUNT = 4
@@ -49,6 +52,11 @@ class GoogleFlowAdapter:
         run_started_at = datetime.now().strftime("%y%m%d%H%M%S")
         workspace_ref: WorkspaceRef | None = None
 
+        _log.info(
+            "google_flow_execute_start",
+            prompt_chars=len(request.prompt),
+            reuse_latest_project=params.reuse_latest_project,
+        )
         await navigate.open_flow(page)
         baseline_urls: frozenset[str]
         if params.reuse_latest_project:
@@ -74,11 +82,18 @@ class GoogleFlowAdapter:
         if params.overlay_logo:
             await self._apply_logo_overlay(artifacts, session)
 
+        duration = time.monotonic() - start
+        _log.info(
+            "google_flow_execute_done",
+            workspace_ref=workspace_ref,
+            artifact_count=len(artifacts),
+            duration_seconds=round(duration, 2),
+        )
         return TaskResult(
             request=request,
             account_email=session.account.email,
             artifacts=artifacts,
-            duration_seconds=time.monotonic() - start,
+            duration_seconds=duration,
             workspace_ref=workspace_ref,
         )
 

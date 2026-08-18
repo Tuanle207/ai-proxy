@@ -26,7 +26,10 @@ import time
 from playwright.async_api import Page
 
 from ai_proxy.core.errors import GenerationTimeoutError
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.providers.perplexity.page import selectors as sel
+
+_log = get_logger()
 
 _POLL_INTERVAL_SECONDS = 0.25
 _SETTLE_POLL_INTERVAL_SECONDS = 0.2
@@ -50,8 +53,10 @@ async def count_answers(page: Page) -> int:
         await asyncio.sleep(_SETTLE_POLL_INTERVAL_SECONDS)
         current = await answers.count()
         if current == previous:
+            _log.info("perplexity_count_answers", baseline_count=current)
             return current
         previous = current
+    _log.info("perplexity_count_answers", baseline_count=previous, settled=False)
     return previous
 
 
@@ -63,15 +68,28 @@ async def wait_for_answer(page: Page, *, timeout: float, baseline_count: int = 0
     """
     stop = page.locator(sel.STOP_BUTTON)
     answers = page.locator(sel.ANSWER_BODY)
-    deadline = time.monotonic() + timeout
+    start = time.monotonic()
+    deadline = start + timeout
     previous_text: str | None = None
     while time.monotonic() < deadline:
         if await answers.count() > baseline_count and await stop.count() == 0:
             text = (await answers.last.evaluate(_TEXT_SANS_CITATIONS_JS)).strip()
             if text and text == previous_text:
+                _log.info(
+                    "perplexity_wait_for_answer_done",
+                    baseline_count=baseline_count,
+                    final_count=await answers.count(),
+                    elapsed_seconds=round(time.monotonic() - start, 2),
+                )
                 return
             previous_text = text
         else:
             previous_text = None
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)
+    _log.error(
+        "perplexity_wait_for_answer_timeout",
+        baseline_count=baseline_count,
+        final_count=await answers.count(),
+        timeout=timeout,
+    )
     raise GenerationTimeoutError(f"answer did not complete within {timeout}s")

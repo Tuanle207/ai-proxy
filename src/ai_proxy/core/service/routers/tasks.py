@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from ai_proxy.core.db.engine import utc_now
 from ai_proxy.core.db.jobs_repo import JobRecord
 from ai_proxy.core.ids import new_id
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.provider import registry
 from ai_proxy.core.provider.registry import UnknownProviderError
 from ai_proxy.core.provider.spec import ProviderSpec
@@ -18,6 +19,8 @@ from ai_proxy.core.service.deps import require_api_key
 from ai_proxy.core.service.schemas import JobRef, TaskSubmitRequest, TaskSubmitResponse
 
 router = APIRouter(prefix="/v1", tags=["tasks"], dependencies=[Depends(require_api_key)])
+
+_log = get_logger()
 
 
 def _resolve_spec(body: TaskSubmitRequest) -> ProviderSpec:
@@ -73,10 +76,22 @@ async def submit_task(
     container: ServiceContainer = request.app.state.container
     spec = _resolve_spec(body)
     _validate(body, container, spec)
+    _log.info(
+        "tasks_submit_received",
+        provider=body.provider,
+        kind=body.kind,
+        prompt_count=len(body.prompts),
+        prompt_lengths=[len(p) for p in body.prompts],
+        workspace_ref=body.workspace_ref,
+        has_idempotency_key=bool(idempotency_key),
+    )
 
     if idempotency_key:
         existing = await container.jobs.get_batch_by_idempotency_key(idempotency_key)
         if existing is not None:
+            _log.info(
+                "tasks_submit_replayed", batch_id=existing.id, idempotency_key=idempotency_key
+            )
             response.status_code = 200
             return await _replayed_response(container, existing.id)
 
@@ -115,6 +130,7 @@ async def submit_task(
         batch_id, idempotency_key=idempotency_key, metadata=body.metadata, jobs=jobs
     )
     positions = await container.engine.submit_jobs(jobs)
+    _log.info("tasks_submit_batch_created", batch_id=batch_id, job_count=len(jobs))
 
     total_slots = container.engine.total_slots()
     eta = container.engine.eta

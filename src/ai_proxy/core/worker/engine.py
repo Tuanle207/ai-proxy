@@ -196,22 +196,43 @@ class WorkerEngine:
         while True:
             job_id = await self._queue.get()
             try:
-                job = await self._jobs.get_job(job_id)
-                if job is None or job.status != "queued":
-                    continue
-                runtime = self._runtime_for(job.provider)
-                slot = await runtime.pool.acquire(exclude=frozenset(job.attempted_emails))
-                job = await self._jobs.get_job(job_id)
-                if job is None or job.status != "queued":
-                    slot.release()
-                    continue
-                await self._jobs.mark_running(job_id, account_email=slot.email)
-                await self._emit_status(job, "running", account_email=slot.email)
-                _log.info("job_started", job_id=job_id, account_email=slot.email)
-                task = asyncio.create_task(self._run_job(job, slot, runtime))
-                self._running_tasks[job_id] = task
+                await self._dispatch_one(job_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Must never escape: an unhandled exception here would silently kill the whole
+                # dispatch loop, leaving every future job stuck `queued` forever with no error.
+                _log.exception("dispatch_loop_iteration_failed", job_id=job_id)
             finally:
                 self._queue.task_done()
+
+    async def _dispatch_one(self, job_id: str) -> None:
+        job = await self._jobs.get_job(job_id)
+        if job is None or job.status != "queued":
+            return
+        runtime = self._runtime_for(job.provider)
+        slot = await runtime.pool.acquire(exclude=frozenset(job.attempted_emails))
+        try:
+            job = await self._jobs.get_job(job_id)
+            if job is None or job.status != "queued":
+                slot.release()
+                return
+            await self._jobs.mark_running(job_id, account_email=slot.email)
+            await self._emit_status(job, "running", account_email=slot.email)
+            _log.info(
+                "job_started",
+                job_id=job_id,
+                account_email=slot.email,
+                attempt=job.attempt,
+                workspace_ref=job.workspace_ref,
+            )
+            task = asyncio.create_task(self._run_job(job, slot, runtime))
+            self._running_tasks[job_id] = task
+        except Exception:
+            # The slot is only handed off to `_run_job` (which releases it) once the task is
+            # created; any earlier failure here must release it itself or it leaks forever.
+            slot.release()
+            raise
 
     async def _run_job(
         self, job: JobRecord, slot: AccountSlot, runtime: ProviderRuntime
@@ -317,7 +338,14 @@ class WorkerEngine:
                 type="job.status", job_id=job.id, batch_id=job.batch_id,
                 status="queued", payload=payload,
             )
-            _log.info("job_requeued", job_id=job.id, attempt=new_attempt, error=error_code)
+            _log.info(
+                "job_requeued",
+                job_id=job.id,
+                attempt=new_attempt,
+                error=error_code,
+                workspace_ref=job.workspace_ref,
+                attempted_emails=attempted,
+            )
         else:
             await self._jobs.fail(
                 job.id,

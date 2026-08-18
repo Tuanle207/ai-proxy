@@ -11,8 +11,11 @@ from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ai_proxy.core.browser.humanize import human_delay
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.providers.perplexity.errors import PerplexityError
 from ai_proxy.providers.perplexity.page import selectors as sel
+
+_log = get_logger()
 
 
 async def open_perplexity(page: Page) -> None:
@@ -31,6 +34,7 @@ async def open_thread(page: Page, ref: str | None) -> None:
     """Resume an existing thread by id/URL, or start fresh on the home page when `ref` is None."""
     if ref:
         target = resolve_thread_ref(ref)
+        _log.info("perplexity_open_thread", mode="resume", workspace_ref=ref, target=target)
         await page.goto(target, wait_until="domcontentloaded")
         try:
             # Let the thread's prior message history finish loading before we return; otherwise
@@ -42,9 +46,13 @@ async def open_thread(page: Page, ref: str | None) -> None:
             # Observed live: the site can silently redirect a direct deep-link to `/` instead of
             # erroring (rate-limit/anti-automation?). Fail loudly rather than silently continuing
             # on the home page, which would submit into a brand-new thread instead of resuming.
+            _log.warning(
+                "perplexity_open_thread_redirect_mismatch", target=target, landed_at=page.url
+            )
             raise PerplexityError(
                 f"navigating to thread {target!r} did not land there (ended up at {page.url!r})"
             )
         await human_delay()
     else:
+        _log.info("perplexity_open_thread", mode="fresh", workspace_ref=None)
         await open_perplexity(page)

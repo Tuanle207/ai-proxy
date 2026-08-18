@@ -18,3 +18,7 @@ class BrowserBackend(Protocol):
     ) -> AbstractAsyncContextManager[BrowserContext]:
         """Yield a `BrowserContext` for `account`, persisting its session state on exit."""
         ...
+
+    async def close_all(self) -> None:
+        """Close any warm/pooled sessions held by this backend (service shutdown)."""
+        ...

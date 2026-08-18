@@ -16,9 +16,32 @@ async def human_delay(min_seconds: float = 0.2, max_seconds: float = 0.8) -> Non
 async def human_type(
     locator: Locator, text: str, *, min_delay_ms: float = 30, max_delay_ms: float = 120
 ) -> None:
-    """Type text into `locator` one character at a time with randomized delays."""
+    """Type text into `locator` one character at a time with randomized delays.
+
+    `\\n` is sent as `Shift+Enter` (a literal newline in most chat composers) rather than a bare
+    Enter keystroke, which many composers (e.g. Perplexity's) treat as "submit" — typing a bare
+    `\n` there would fragment a multi-line prompt into several separately-submitted messages.
+    """
     for char in text:
-        await locator.press_sequentially(char, delay=random.uniform(min_delay_ms, max_delay_ms))
+        delay = random.uniform(min_delay_ms, max_delay_ms)
+        if char == "\n":
+            await locator.press("Shift+Enter", delay=delay)
+        else:
+            await locator.press_sequentially(char, delay=delay)
+
+
+async def paste_text(locator: Locator, text: str) -> None:
+    """Insert `text` in one shot via `execCommand('insertText')` instead of per-char typing.
+
+    Fast, but only proven to update the host editor's internal (React/Lexical/Slate) state
+    correctly on a *freshly loaded* composer — verified live to leave the submit control stuck
+    disabled when reused on a composer that already holds a prior conversation/session (see
+    `/memories/repo/vcre-ai-proxy.md`). Callers must only use this for fresh threads/projects and
+    fall back to `human_type` for resumed ones.
+    """
+    await locator.evaluate(
+        "(el, text) => { el.focus(); document.execCommand('insertText', false, text); }", text
+    )
 
 
 async def human_mouse_jitter(

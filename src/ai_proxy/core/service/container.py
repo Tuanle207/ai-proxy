@@ -71,7 +71,9 @@ class ServiceContainer:
             spec = registry.get(name)
             provider_settings = spec.settings_model()
             accounts = AccountManager(self.paths, name)
-            backend = CamoufoxBackend(self.paths, name)
+            backend = CamoufoxBackend(
+                self.paths, name, idle_ttl_seconds=settings.browser_idle_ttl_seconds
+            )
             pool = AccountSlotPool(
                 accounts,
                 RoundRobinStrategy(),
@@ -141,4 +143,6 @@ class ServiceContainer:
 
     async def shutdown(self) -> None:
         await self.engine.shutdown()
+        for runtime in self.runtimes.values():
+            await runtime.backend.close_all()
         await self.db.close()

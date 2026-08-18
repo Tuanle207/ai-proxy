@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import cast
 
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Artifact, TaskKind, TaskRequest, TaskResult, WorkspaceRef
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_proxy.core.worker.failure import AccountEffect, FailurePolicy
@@ -19,6 +20,8 @@ from ai_proxy.providers.perplexity.config import PerplexitySettings
 from ai_proxy.providers.perplexity.errors import PerplexityError
 from ai_proxy.providers.perplexity.page import extract, navigate, prompt, wait
 from ai_proxy.providers.perplexity.params import PerplexityParams
+
+_log = get_logger()
 
 
 class PerplexityAdapter:
@@ -37,10 +40,16 @@ class PerplexityAdapter:
         if page is None:
             raise RuntimeError("perplexity requires a browser page (ProviderSession.page is None)")
 
+        _log.info(
+            "perplexity_execute_start",
+            workspace_ref=request.workspace_ref,
+            prompt_chars=len(request.prompt),
+        )
         start = time.monotonic()
+        fresh = request.workspace_ref is None
         await navigate.open_thread(page, request.workspace_ref)
         baseline_count = await wait.count_answers(page)
-        await prompt.submit_prompt(page, request.prompt)
+        await prompt.submit_prompt(page, request.prompt, fresh=fresh)
         await wait.wait_for_answer(page, timeout=request.timeout, baseline_count=baseline_count)
         answer = await extract.extract_answer(page)
         workspace_ref = await extract.extract_thread_ref(page)
@@ -53,11 +62,18 @@ class PerplexityAdapter:
             text=answer,
             bytes=len(answer.encode("utf-8")),
         )
+        duration = time.monotonic() - start
+        _log.info(
+            "perplexity_execute_done",
+            workspace_ref=workspace_ref,
+            answer_bytes=artifact.bytes,
+            duration_seconds=round(duration, 2),
+        )
         return TaskResult(
             request=request,
             account_email=session.account.email,
             artifacts=[artifact],
-            duration_seconds=time.monotonic() - start,
+            duration_seconds=duration,
             workspace_ref=workspace_ref,
         )
 

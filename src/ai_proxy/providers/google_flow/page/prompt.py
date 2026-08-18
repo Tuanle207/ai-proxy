@@ -10,6 +10,14 @@ Verified 2026-08-15: once a (reused) project already has prior agent messages, `
 process" chat-log toggle (DOM order: first) and the real submit/Create button (DOM order:
 last), both apparently rendering the same icon glyph as text. `.last` reliably picks the real
 submit button.
+
+`paste_text` (execCommand insertText) was tried here 2026-08-18 alongside the same change in
+Perplexity's prompt.py, then reverted proactively (Perplexity's own e2e run showed it left the
+submit control permanently disabled on a resumed thread). Independently e2e-verified here too on
+2026-08-18: on a fresh project, `paste_text` inserts a raw text node alongside Slate's own
+placeholder (Slate's internal editor state never sees the change, since `execCommand` bypasses
+its controlled update path) and `SUBMIT_BUTTON` never enables. Do not use `paste_text` here at
+all, fresh or resumed — `human_type` is the only mechanism proven to work with this editor.
 """
 
 from __future__ import annotations

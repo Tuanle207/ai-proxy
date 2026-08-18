@@ -37,11 +37,6 @@ MODEL_OPTION = "[role='menuitemradio']"
 # New answers land on /search/<uuid>; saved sessions are under /library.
 SEARCH_URL_MARKER = "/search/"
 
-# Logged-out probe: the sidebar's bottom item reads "Sign In" (a plain <div>, not an anchor), so
-# match by text rather than tag/attribute. Used by `wait_for_answer` to detect a login wall
-# mid-run; the logged-in probe itself uses the positive bell marker below.
-LOGIN_BUTTON = "text=Sign In"
-
 # Logged-in marker: the notification bell (`#pplx-icon-bell`) only renders for authenticated
 # users. Its `<use>` references the icon via `xlink:href`, a *namespaced* attribute — plain
 # `[href=...]` and escaped `[xlink\:href=...]` do NOT match it (verified live); the any-namespace

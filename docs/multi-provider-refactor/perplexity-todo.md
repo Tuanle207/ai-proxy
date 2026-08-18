@@ -7,7 +7,7 @@ Status: implementation complete except selector confirmation + live verification
 - [x] Capture `ANSWER_BODY` — `div[data-renderer='lm']` (markdown-renderer marker, more stable
   than the churny Tailwind `prose` classes)
 - [x] Capture `STOP_BUTTON` — `button[aria-label='Stop response (Esc)']`
-- [x] Confirm `LOGIN_BUTTON` — logged-out sidebar shows a "Sign In" `<div>` (text-matched, not
+- [x] Confirm `LOGIN_BUTTON` — logged-out sidebar shows a "Sign In" `<div>` (text-matched, not -> replaced by bell icon
   an anchor/button): `text=Sign In`
 
 Capture with:

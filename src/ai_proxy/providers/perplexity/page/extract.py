@@ -34,6 +34,9 @@ _CLEAR_COPY_JS = "() => { window.__pplx_copy = null; }"
 _COPY_WAIT_SECONDS = 6.0
 _COPY_POLL_SECONDS = 0.1
 
+_STREAM_STOP_TIMEOUT_SECONDS = 120.0
+_STREAM_STOP_POLL_SECONDS = 0.25
+
 # Citation markers in the copied markdown: Perplexity serializes each chip as a numbered link
 # (sometimes bare). UNVERIFIED against a live capture (2026-08-17) — adjust these once a real
 # copied sample exists (`scripts/_dump_citations.py`).
@@ -50,6 +53,23 @@ def strip_citations(markdown: str) -> str:
     return text.strip()
 
 
+async def _wait_stream_stopped(page: Page) -> None:
+    """Block until the response has finished streaming (stop control no longer active).
+
+    The Copy button renders for a still-streaming answer too, so relying on it alone can capture
+    a truncated response. Gate on the stop control entering its closed/removed state instead.
+    """
+    stop = page.locator(sel.STOP_BUTTON_ACTIVE)
+    deadline = time.monotonic() + _STREAM_STOP_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if await stop.count() == 0:
+            return
+        await asyncio.sleep(_STREAM_STOP_POLL_SECONDS)
+    raise PerplexityError(
+        f"response still streaming (stop control active) after {_STREAM_STOP_TIMEOUT_SECONDS}s"
+    )
+
+
 async def extract_answer(page: Page) -> str:
     """Return the latest answer's markdown via its Copy button, citations stripped.
 
@@ -57,8 +77,10 @@ async def extract_answer(page: Page) -> str:
     actionability (hover-to-reveal buttons made `.click()` hang). This retry avoids both:
     `dispatch_event` skips Playwright's visibility checks, and the `writeText` hook captures
     the payload without touching the OS clipboard. `.last` picks the most recent message's
-    copy control (see `COPY_BUTTON` in selectors.py).
+    copy control (see `COPY_BUTTON` in selectors.py). The stream must have stopped first
+    (`_wait_stream_stopped`) so a mid-stream copy can't truncate the answer.
     """
+    await _wait_stream_stopped(page)
     button = page.locator(sel.COPY_BUTTON).last
     if await button.count() == 0:
         raise PerplexityError("copy button not found (selector churn? see page/selectors.py)")

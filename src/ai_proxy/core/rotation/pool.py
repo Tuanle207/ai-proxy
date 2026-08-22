@@ -94,6 +94,30 @@ class AccountSlotPool:
             except TimeoutError:
                 pass
 
+    async def try_acquire(self, *, exclude: frozenset[str] = frozenset()) -> AccountSlot | None:
+        """Reserve a slot immediately, or return `None` if no account/slot is free right now.
+
+        Non-blocking counterpart to `acquire` so the dispatch loop can defer an unsatifiable job
+        and keep servicing others instead of blocking the whole queue behind it.
+        """
+        account = self._select_candidate(exclude)
+        if account is None:
+            return None
+        global_held = False
+        if self._global is not None:
+            if self._global.locked():
+                return None
+            await self._global.acquire()
+            global_held = True
+        self._in_flight[account.email] = self._in_flight.get(account.email, 0) + 1
+        self._total_in_flight += 1
+        _log.info(
+            "account_slot_acquired",
+            account_email=account.email,
+            in_flight=self._in_flight[account.email],
+        )
+        return AccountSlot(self, account.email, global_held=global_held)
+
     def release(self, slot: AccountSlot, *, global_held: bool = False) -> None:
         current = self._in_flight.get(slot.email, 0)
         if current <= 1:

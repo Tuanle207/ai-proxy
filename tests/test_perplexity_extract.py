@@ -28,6 +28,14 @@ class FakeCopyButton:
         self.dispatched.append(event)
 
 
+class FakeStopLocator:
+    def __init__(self, streaming: bool = False):
+        self._streaming = streaming
+
+    async def count(self) -> int:
+        return 1 if self._streaming else 0
+
+
 class FakeCopyLocator:
     def __init__(self, button: FakeCopyButton):
         self._button = button
@@ -40,12 +48,15 @@ class FakeCopyLocator:
 class FakeCopyPage:
     """`evaluate` distinguishes the three scripts by their content."""
 
-    def __init__(self, copied: str | None, button: FakeCopyButton):
+    def __init__(self, copied: str | None, button: FakeCopyButton, *, streaming: bool = False):
         self.url = "https://www.perplexity.ai/search/abc"
         self.copied = copied
         self.button = button
+        self.stop = FakeStopLocator(streaming=streaming)
 
-    def locator(self, selector: str) -> FakeCopyLocator:
+    def locator(self, selector: str) -> FakeCopyLocator | FakeStopLocator:
+        if selector == sel.STOP_BUTTON_ACTIVE:
+            return self.stop
         assert selector == sel.COPY_BUTTON
         return FakeCopyLocator(self.button)
 
@@ -74,6 +85,13 @@ def test_extract_answer_no_text_times_out(monkeypatch: Any) -> None:
     monkeypatch.setattr(extract_module, "_COPY_WAIT_SECONDS", 0.0)
     monkeypatch.setattr(extract_module, "_COPY_POLL_SECONDS", 0.0)
     page = FakeCopyPage(None, FakeCopyButton())
+    with pytest.raises(PerplexityError):
+        asyncio.run(extract_module.extract_answer(page))
+
+
+def test_extract_answer_still_streaming_raises(monkeypatch: Any) -> None:
+    monkeypatch.setattr(extract_module, "_STREAM_STOP_TIMEOUT_SECONDS", 0.0)
+    page = FakeCopyPage("text", FakeCopyButton(), streaming=True)
     with pytest.raises(PerplexityError):
         asyncio.run(extract_module.extract_answer(page))
 

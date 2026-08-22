@@ -109,6 +109,7 @@ class AIProxyClient:
                         on_workspace_created=_noop,
                     )
                     result = await self._adapter.execute(session, request)
+                    await self._adapter.cleanup(session, result.workspace_ref)
                 finally:
                     await page.close()
         else:
@@ -123,5 +124,5 @@ class AIProxyClient:
                 on_workspace_created=_noop,
             )
             result = await self._adapter.execute(session, request)
-        await self._adapter.cleanup(session, result.workspace_ref)
+            await self._adapter.cleanup(session, result.workspace_ref)
         return result

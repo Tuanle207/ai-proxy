@@ -74,7 +74,9 @@ class PerplexityAuth:
 
     async def interactive_login(self, session: ProviderSession) -> bool:
         timeout = self._settings.login_timeout
-        async with self._deps.backend.browser_context(session.account, headless=False) as context:
+        async with self._deps.backend.browser_context(
+            session.account, headless=False, reuse=False
+        ) as context:
             page = await context.new_page()
             try:
                 await page.goto(sel.PERPLEXITY_URL, wait_until="domcontentloaded")

@@ -20,6 +20,7 @@ from ai_proxy.core.worker.failure import FailurePolicy
 from ai_proxy.core.worker.metadata import extract_image_metadata
 from ai_proxy.providers.google_flow.config import GoogleFlowSettings
 from ai_proxy.providers.google_flow.page import download, navigate, prompt, wait
+from ai_proxy.providers.google_flow.page import params as page_params
 from ai_proxy.providers.google_flow.page.selectors import LOGIN_REDIRECT_HOST
 from ai_proxy.providers.google_flow.params import GoogleFlowParams
 from ai_proxy.providers.google_flow.postprocess import logo_overlay
@@ -67,6 +68,12 @@ class GoogleFlowAdapter:
             await session.on_workspace_created(workspace_ref)
             baseline_urls = frozenset()
         await navigate.switch_to_image_mode(page)
+        await page_params.configure_generation(
+            page,
+            model=params.model,
+            aspect_ratio=params.aspect_ratio,
+            count=effective_count,
+        )
         await prompt.submit_prompt(page, request.prompt, request.inputs)
         await wait.wait_for_completion(
             page,

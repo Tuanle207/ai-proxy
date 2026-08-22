@@ -76,7 +76,7 @@ class FakeAuth:
 class NullBackend:
     @asynccontextmanager
     async def browser_context(
-        self, account: Account, *, headless: bool = True
+        self, account: Account, *, headless: bool = True, reuse: bool = True
     ) -> AsyncIterator[BrowserContext]:
         raise NotImplementedError("NullBackend is not a real browser")
 

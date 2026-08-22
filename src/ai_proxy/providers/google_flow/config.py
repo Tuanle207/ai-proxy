@@ -16,3 +16,7 @@ class GoogleFlowSettings(ProviderSettings):
     delete_project_after_job: bool = False
     quota_cooldown_minutes: int = 120
     overlay_logo: bool = True
+    # Flow accounts are Google sessions: two concurrent browsers on the same account can
+    # invalidate each other's cookies (and, with `reuse_latest_project`, race on one project),
+    # so same-account concurrency is serialized by default. Override via env if desired.
+    per_account_concurrency: int | None = 1

@@ -17,7 +17,15 @@ Key findings that shaped these selectors:
 - The prompt input is a `[role="textbox"]` contenteditable `<div>`, not a `<textarea>`.
 - Generation parameters (model, aspect ratio, count) are configured via a "tune" (Settings)
   icon button that opens a side panel with aspect-ratio buttons ("16:9", "4:3", "1:1", "3:4",
-  "9:16"), count buttons ("x1".."x4"), and a model dropdown (default seen: "Nano Banana 2").
+  "9:16"), count buttons ("x1".."x4"), and a model dropdown.
+  Verified 2026-08-22 (live, Vietnamese UI): the panel has exactly two `[role="tablist"]`
+  elements in DOM order — the first holds the aspect-ratio tabs (default "16:9"), the second
+  the count tabs (default "x1"); each tab is a `<button type="button" role="tab">`. The panel
+  closes via a button labeled "Lưu" (or "Save" in English), not Escape. The model dropdown
+  trigger is the element immediately after the parent of the count tablist — a
+  `<button aria-haspopup="menu">` — which opens a Radix popper (`[data-radix-popper-content-wrapper]`)
+  listing `<button role="menuitem">` options ("Nano Banana Pro", "Nano Banana 2", "Nano Banana
+  Lite"; default "Nano Banana Lite").
 - Flow has a "confirm before creating" setting (default: always confirm), but no confirmation
   dialog was actually shown during a real, successful submission — it may only apply to
   video generation or a different account tier. `SUBMIT_BUTTON` and typing via an explicit
@@ -45,6 +53,16 @@ LOGIN_REDIRECT_HOST = "accounts.google.com"
 # --- Verified against a live session ---
 NEW_PROJECT_BUTTON = "button:has-text('add_2')"
 SETTINGS_BUTTON = "button:has-text('tune')"
+# First tablist = aspect ratio ("16:9".."9:16", default "16:9"); second = count ("x1".."x4").
+SETTINGS_TABLIST = "div[role='tablist']"
+SETTINGS_SAVE_BUTTON_LABELS = ("lưu", "save")
+# Model dropdown trigger: the element right after the count tablist's parent (self-or-descendant,
+# since that sibling may already be the button or may just wrap it).
+MODEL_BUTTON_XPATH = (
+    "xpath=../following-sibling::*[1]/descendant-or-self::button[@aria-haspopup='menu']"
+)
+# Generic Radix UI popper wrapper — shared by the model dropdown and the project header menu.
+RADIX_POPPER_DROPDOWN = "div[data-radix-popper-content-wrapper]"
 PROMPT_TEXTBOX = "[role='textbox']"
 SUBMIT_BUTTON = "button:has-text('arrow_forward')"
 RESULT_IMAGE_THUMBNAIL = "img[src*='media.getMediaUrlRedirect']"
@@ -55,16 +73,18 @@ RESULT_IMAGE_THUMBNAIL = "img[src*='media.getMediaUrlRedirect']"
 # substring is used, same convention as the other selectors above.
 PROJECT_LINK = "a[href*='/project/']"
 
-# Project deletion (§6.2). The delete trigger is a button carrying a Material Symbols
-# "delete" icon ligature, scoped to the <i> so the localized sr-only <span> can't false-match.
-# The confirmation dialog is a generic role=dialog/alertdialog; its confirm button is matched
-# by known label text rather than by copying the trigger's sr-only label (tried and rejected:
-# a freshly-created project's trigger can momentarily render that label in the wrong locale)
-# or by position (fragile if the dialog ever gains a third button). Extend this tuple as new
-# locales are observed live; matching is case-insensitive substring (verified 2026-08-15: "Hủy"
-# for cancel, "Xoá dự án" for confirm).
+# Project deletion (§6.2), from the project's own page. Verified 2026-08-22 (live): the header
+# menu is the first `aria-haspopup="menu"` button inside `#flow-desktop-header`; it opens a
+# `RADIX_POPPER_DROPDOWN` listing a `role="menuitem"` with a "delete" icon ligature. Confirming
+# shows a `role="dialog"` (with a "warning" icon) whose confirm button is matched by known
+# label text rather than by copying the trigger's sr-only label (tried and rejected on the old
+# list-page flow: a freshly-created project's trigger can momentarily render that label in the
+# wrong locale) or by position (fragile if the dialog ever gains a third button). Extend this
+# tuple as new locales are observed live; matching is case-insensitive substring (verified
+# 2026-08-15: "Hủy" for cancel, "Xoá dự án" for confirm).
+HEADER_MENU_BUTTON = "#flow-desktop-header button[aria-haspopup='menu']"
+DELETE_MENU_ITEM = "button[role='menuitem']:has(i:text-is('delete'))"
 CONFIRM_BUTTON_LABELS = ("delete", "xoá dự án", "xóa dự án")
-PROJECT_DELETE_BUTTON = "button:has(i.google-symbols:text-is('delete'))"
 CONFIRM_DIALOG = "[role='dialog'], [role='alertdialog']"
 
 # --- Unverified: reference-image upload and error states were not exercised live ---

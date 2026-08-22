@@ -19,6 +19,7 @@ dependencies = [
     "pillow>=10.3",
     "camoufox[geoip]>=0.4",
     "playwright>=1.44",
+    "pyperclip>=1.9",
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "aiosqlite>=0.20",
@@ -39,6 +40,7 @@ dev = [
     "mypy>=1.10",
     "types-PyYAML",
     "types-aiofiles",
+    "types-pyperclip",
 ]
 
 [project.scripts]

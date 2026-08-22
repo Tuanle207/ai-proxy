@@ -134,6 +134,36 @@ def test_pools_share_machine_wide_cap_but_not_each_other(tmp_path: Path) -> None
     asyncio.run(main())
 
 
+def test_saturated_provider_does_not_block_other_provider(tmp_path: Path) -> None:
+    async def main() -> None:
+        registry.register(make_spec(name="saturated"))
+        registry.register(make_spec(name="healthy"))
+        container = ServiceContainer(Settings(data_dir=str(tmp_path)))
+        _activate(container.provider("healthy"), "ok@example.com")
+        sat_accounts = container.provider("saturated").accounts
+        sat_accounts.add("dead@example.com")
+        sat_accounts.set_status("dead@example.com", AccountStatus.DISABLED)
+
+        batch = new_id("btc")
+        stuck_job = _job("saturated", batch, "never runs")
+        ok_job = _job("healthy", batch, "goes")
+        await container.startup()
+        try:
+            await container.jobs.create_batch_with_jobs(
+                batch, idempotency_key=None, metadata=None, jobs=[stuck_job, ok_job]
+            )
+            await container.engine.submit_jobs([stuck_job, ok_job])
+            done = await _wait_terminal(container, ok_job.id)
+            stuck = await container.jobs.get_job(stuck_job.id)
+        finally:
+            await container.shutdown()
+
+        assert done.status == "completed"
+        assert stuck is not None and stuck.status == "queued"
+
+    asyncio.run(main())
+
+
 def test_failing_provider_classified_independently(tmp_path: Path) -> None:
     async def main() -> None:
         registry.register(make_spec(name="ok"))

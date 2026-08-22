@@ -37,12 +37,17 @@ def test_classify_failure_perplexity_error_non_retryable() -> None:
     assert policy.account_effect is AccountEffect.NONE
 
 
-def test_execute_returns_text_artifact(monkeypatch: Any, tmp_path: Any) -> None:
+def _patch_execute_flow(monkeypatch: Any) -> dict[str, Any]:
+    """Patch the adapter's page collaborators; return a call log for order assertions."""
+
     async def _noop(*args: Any, **kwargs: Any) -> None:
         return None
 
     async def _fake_count_answers(page: Any) -> int:
         return 0
+
+    async def _fake_last_answer_text(page: Any) -> str:
+        return ""
 
     async def _fake_extract_answer(page: Any) -> str:
         return "hello world"
@@ -50,12 +55,27 @@ def test_execute_returns_text_artifact(monkeypatch: Any, tmp_path: Any) -> None:
     async def _fake_extract_thread_ref(page: Any) -> str:
         return "https://www.perplexity.ai/search/test"
 
+    calls: dict[str, Any] = {"events": []}
+
+    async def _fake_set_model(page: Any, model: str | None) -> None:
+        calls["events"].append(("set_model", model))
+
+    async def _fake_submit_prompt(page: Any, text: str, *, fresh: bool) -> None:
+        calls["events"].append(("submit_prompt", text))
+
     monkeypatch.setattr(adapter_module.navigate, "open_thread", _noop)
-    monkeypatch.setattr(adapter_module.prompt, "submit_prompt", _noop)
+    monkeypatch.setattr(adapter_module.params, "set_model", _fake_set_model)
+    monkeypatch.setattr(adapter_module.prompt, "submit_prompt", _fake_submit_prompt)
     monkeypatch.setattr(adapter_module.wait, "count_answers", _fake_count_answers)
+    monkeypatch.setattr(adapter_module.wait, "last_answer_text", _fake_last_answer_text)
     monkeypatch.setattr(adapter_module.wait, "wait_for_answer", _noop)
     monkeypatch.setattr(adapter_module.extract, "extract_answer", _fake_extract_answer)
     monkeypatch.setattr(adapter_module.extract, "extract_thread_ref", _fake_extract_thread_ref)
+    return calls
+
+
+def test_execute_returns_text_artifact(monkeypatch: Any, tmp_path: Any) -> None:
+    calls = _patch_execute_flow(monkeypatch)
 
     paths = DataPaths(tmp_path / "data")
     adapter = PerplexityAdapter(make_deps(paths))
@@ -78,3 +98,23 @@ def test_execute_returns_text_artifact(monkeypatch: Any, tmp_path: Any) -> None:
     artifact = result.artifacts[0]
     assert artifact.kind is TaskKind.TEXT
     assert artifact.text == "hello world"
+    assert calls["events"] == [("set_model", None), ("submit_prompt", "hi")]
+
+
+def test_execute_applies_model_param_before_submitting(monkeypatch: Any, tmp_path: Any) -> None:
+    calls = _patch_execute_flow(monkeypatch)
+
+    paths = DataPaths(tmp_path / "data")
+    adapter = PerplexityAdapter(make_deps(paths))
+    session = make_session(paths)
+    session.page = object()
+
+    request = TaskRequest(
+        provider="perplexity",
+        kind=TaskKind.TEXT,
+        prompt="hi",
+        params={"model": "GPT-5.6 Terra"},
+    )
+    asyncio.run(adapter.execute(session, request))
+
+    assert calls["events"] == [("set_model", "GPT-5.6 Terra"), ("submit_prompt", "hi")]

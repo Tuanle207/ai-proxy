@@ -37,3 +37,30 @@ def test_acquire_prefers_untried_account_when_available(tmp_path: Path) -> None:
     slot = asyncio.run(pool.acquire(exclude=frozenset({"tried@example.com"})))
 
     assert slot.email == "fresh@example.com"
+
+
+def test_try_acquire_returns_slot_when_available(tmp_path: Path) -> None:
+    async def main() -> None:
+        pool = _pool(tmp_path, "solo@example.com")
+
+        slot = await pool.try_acquire()
+
+        assert slot is not None and slot.email == "solo@example.com"
+        slot.release()
+
+    asyncio.run(main())
+
+
+def test_try_acquire_returns_none_when_saturated(tmp_path: Path) -> None:
+    async def main() -> None:
+        pool = _pool(tmp_path, "solo@example.com")  # per_account_limit=2
+        first = await pool.acquire()
+        second = await pool.acquire()
+
+        assert await pool.try_acquire() is None
+
+        first.release()
+        second.release()
+        assert await pool.try_acquire() is not None
+
+    asyncio.run(main())

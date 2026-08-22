@@ -1,21 +1,28 @@
 """Wait for the answer to finish streaming and classify failures.
 
-Completion is detected by the streaming "stop" button disappearing *after* a **new** answer body
-has appeared. "New" matters: when resuming an existing thread, the prior answer already satisfies
-"stop button absent + answer text present" the instant the new prompt is submitted (before the new
-stream even starts), so a bare presence check would return the stale answer. `wait_for_answer`
-therefore takes a `baseline_count` (the answer count observed before submitting) and requires the
-count to grow past it.
+Completion = a **new** answer has appeared *and* streaming has stopped (the "Stop response"
+control is no longer in its active/`data-state="open"` state) *and* the answer text is stable.
 
-That baseline itself needs care: after navigating to an existing thread, `domcontentloaded` fires
-before the SPA finishes hydrating/rendering the thread's prior messages, so an instantaneous count
-can undercount and let `wait_for_answer` lock onto old history as it finishes rendering.
-`count_answers` polls until the count is stable across consecutive reads before returning it.
+"New" matters: when resuming an existing thread, the prior answer already satisfies "not streaming
++ answer text present" the instant the new prompt is submitted (before the new stream even
+starts), so a bare presence check would return the stale answer. `wait_for_answer` detects "new"
+by the answer count growing past `baseline_count`, falling back to the last answer's text changing
+from `baseline_text` (captured before submitting) — this also copes with fast answers on long
+threads, where virtualized rendering can keep the DOM answer *count* from rising even though a new
+answer rendered.
 
-Even with a correct baseline, "stop button absent" is momentarily true right after the new answer
+Streaming state uses the stop control's active selector (`STOP_BUTTON_ACTIVE`, `data-state="open"`)
+rather than its bare presence: the button persists after completion with `data-state="closed"`, so
+the bare `STOP_BUTTON` never reports zero once any answer has completed (observed 2026-08-18).
+
+`count_answers` polls until the count is stable across consecutive reads before returning it,
+because after navigating to an existing thread `domcontentloaded` fires before the SPA finishes
+rendering the prior messages (an instantaneous count can undercount and lock onto old history).
+
+Even with a correct baseline, "not streaming" is momentarily true right after the new answer
 container is created but before the stop button has mounted, which can grab a mid-stream fragment
-(e.g. just a heading). `wait_for_answer` therefore also requires the answer text itself to be
-unchanged across two consecutive polls before treating it as complete.
+(e.g. just a heading). The answer text must therefore be unchanged across two consecutive polls
+before completion is declared.
 """
 
 from __future__ import annotations
@@ -60,25 +67,50 @@ async def count_answers(page: Page) -> int:
     return previous
 
 
-async def wait_for_answer(page: Page, *, timeout: float, baseline_count: int = 0) -> None:
-    """Wait until a new answer (past `baseline_count`) has finished streaming.
+async def last_answer_text(page: Page) -> str:
+    """Return the current last answer's text (citations stripped), or "" when there is none.
 
-    Returns once a new answer body is present, the stop button is gone, and its text is unchanged
-    across two consecutive polls (still-streaming text keeps growing between polls).
+    Captured *before* submitting, alongside `count_answers`, as the text baseline for "a new
+    answer appeared" (see `wait_for_answer`).
     """
-    stop = page.locator(sel.STOP_BUTTON)
+    answers = page.locator(sel.ANSWER_BODY)
+    if await answers.count() == 0:
+        return ""
+    return str(await answers.last.evaluate(_TEXT_SANS_CITATIONS_JS)).strip()
+
+
+async def wait_for_answer(
+    page: Page,
+    *,
+    timeout: float,
+    baseline_count: int = 0,
+    baseline_text: str = "",
+) -> None:
+    """Wait until a new answer (past the baseline) has finished streaming.
+
+    "New" is detected by the answer count growing past `baseline_count` or, when that stays flat
+    (fast answers on virtualized long threads), the last answer's text changing from
+    `baseline_text`. Completion then requires the active stop control to be gone and the answer
+    text to be unchanged across two consecutive polls.
+    """
+    active_stop = page.locator(sel.STOP_BUTTON_ACTIVE)
     answers = page.locator(sel.ANSWER_BODY)
     start = time.monotonic()
     deadline = start + timeout
     previous_text: str | None = None
     while time.monotonic() < deadline:
-        if await answers.count() > baseline_count and await stop.count() == 0:
+        count = await answers.count()
+        new_answer = count > baseline_count
+        if not new_answer and baseline_text and count > 0:
+            last = (await answers.last.evaluate(_TEXT_SANS_CITATIONS_JS)).strip()
+            new_answer = bool(last) and last != baseline_text
+        if new_answer and await active_stop.count() == 0:
             text = (await answers.last.evaluate(_TEXT_SANS_CITATIONS_JS)).strip()
             if text and text == previous_text:
                 _log.info(
                     "perplexity_wait_for_answer_done",
                     baseline_count=baseline_count,
-                    final_count=await answers.count(),
+                    final_count=count,
                     elapsed_seconds=round(time.monotonic() - start, 2),
                 )
                 return

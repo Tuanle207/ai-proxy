@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -44,6 +44,13 @@ from ai_proxy.core.worker.runner import TaskRunner
 TERMINAL_STATUSES = {"completed", "failed", "canceled"}
 _STATS_INTERVAL_SECONDS = 5.0
 _JOB_LOG_CONTEXT = ("job_id", "batch_id", "account_email")
+# How long to defer a job whose provider has no free account/slot, so the dispatch loop can
+# keep servicing other jobs instead of blocking behind it (§6.2).
+_NO_SLOT_RETRY_SECONDS = 1.0
+# Retry backoff: first retry waits ~30s, doubling per attempt up to a cap, so a batch of jobs
+# against dead sessions doesn't stampede the remaining accounts in a tight hot-retry loop.
+_RETRY_BACKOFF_BASE_SECONDS = 30.0
+_MAX_RETRY_BACKOFF_SECONDS = 300.0
 
 _log = get_logger()
 
@@ -66,17 +73,22 @@ def derive_batch_status(statuses: list[str]) -> str:
 
 
 class JobQueue:
-    """In-memory priority queue keyed by `(-priority, queued_at, job_id)` (§4.4)."""
+    """In-memory priority queue keyed by `(-priority, ready_at, job_id)` (§4.4).
+
+    `ready_at` is the earliest time the job should be dispatched: freshly submitted jobs use
+    their `queued_at`, retries use a backoff timestamp, and a job whose provider is momentarily
+    saturated is deferred a short, bounded delay rather than blocking the whole loop.
+    """
 
     def __init__(self) -> None:
         self._queue: asyncio.PriorityQueue[tuple[int, float, str]] = asyncio.PriorityQueue()
 
-    def enqueue(self, job_id: str, priority: int, queued_at: datetime) -> None:
-        self._queue.put_nowait((-priority, queued_at.timestamp(), job_id))
+    def enqueue(self, job_id: str, priority: int, ready_at: datetime) -> None:
+        self._queue.put_nowait((-priority, ready_at.timestamp(), job_id))
 
-    async def get(self) -> str:
-        _, _, job_id = await self._queue.get()
-        return job_id
+    async def get(self) -> tuple[str, datetime]:
+        _, ready_ts, job_id = await self._queue.get()
+        return job_id, datetime.fromtimestamp(ready_ts, tz=UTC)
 
     def task_done(self) -> None:
         self._queue.task_done()
@@ -194,8 +206,11 @@ class WorkerEngine:
 
     async def _dispatch_loop(self) -> None:
         while True:
-            job_id = await self._queue.get()
+            job_id, ready_at = await self._queue.get()
             try:
+                delay = (ready_at - utc_now()).total_seconds()
+                if delay > 0:
+                    await asyncio.sleep(delay)
                 await self._dispatch_one(job_id)
             except asyncio.CancelledError:
                 raise
@@ -211,7 +226,14 @@ class WorkerEngine:
         if job is None or job.status != "queued":
             return
         runtime = self._runtime_for(job.provider)
-        slot = await runtime.pool.acquire(exclude=frozenset(job.attempted_emails))
+        slot = await runtime.pool.try_acquire(exclude=frozenset(job.attempted_emails))
+        if slot is None:
+            # Every account of this provider is saturated (or the global browser ceiling is
+            # reached): defer this job a short while and keep dispatching, so it can't starve
+            # other jobs — including jobs of other providers — behind it (§6.2).
+            ready_at = utc_now() + timedelta(seconds=_NO_SLOT_RETRY_SECONDS)
+            self._queue.enqueue(job.id, job.priority, ready_at)
+            return
         try:
             job = await self._jobs.get_job(job_id)
             if job is None or job.status != "queued":
@@ -246,7 +268,9 @@ class WorkerEngine:
         try:
             try:
                 if runtime.spec.capabilities.requires_browser:
-                    async with runtime.backend.browser_context(account, headless=True) as context:
+                    async with runtime.backend.browser_context(
+                        account, headless=self._settings.headless
+                    ) as context:
                         page = await context.new_page()
                         try:
                             result = await self._runner.run(job, account, page, runtime)
@@ -314,6 +338,10 @@ class WorkerEngine:
     ) -> None:
         await runtime.accounts.record_failure_async(email)
         await self._apply_account_effect(runtime, email, policy)
+        if policy.account_effect == AccountEffect.NEEDS_LOGIN:
+            # Drop the account's warm sessions: they hold the now-dead cookies, and a later
+            # re-login would otherwise still re-claim this stale session and fail auth again.
+            await runtime.backend.close_account_sessions(email)
         error_code = policy.error_code
         error_message = (str(exc) or type(exc).__name__)[:2000]
         attempted = list(job.attempted_emails)
@@ -329,7 +357,7 @@ class WorkerEngine:
                 error_code=error_code,
                 error_message=error_message,
             )
-            self._queue.enqueue(job.id, job.priority, job.queued_at)
+            self._queue.enqueue(job.id, job.priority, utc_now() + self._retry_backoff(new_attempt))
             payload = JobStatusEvent(
                 job_id=job.id, batch_id=job.batch_id, status="queued",
                 attempt=new_attempt, at=utc_now(),
@@ -379,6 +407,13 @@ class WorkerEngine:
             await runtime.accounts.set_cooldown_async(
                 email, timedelta(minutes=self._settings.cooldown_minutes)
             )
+
+    @staticmethod
+    def _retry_backoff(attempt: int) -> timedelta:
+        seconds = min(
+            _RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)), _MAX_RETRY_BACKOFF_SECONDS
+        )
+        return timedelta(seconds=seconds)
 
     # --- cancellation ---
 

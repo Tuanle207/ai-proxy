@@ -74,10 +74,13 @@ class ServiceContainer:
             backend = CamoufoxBackend(
                 self.paths, name, idle_ttl_seconds=settings.browser_idle_ttl_seconds
             )
+            per_account_limit = getattr(provider_settings, "per_account_concurrency", None)
+            if per_account_limit is None:
+                per_account_limit = settings.per_account_concurrency
             pool = AccountSlotPool(
                 accounts,
                 RoundRobinStrategy(),
-                per_account_limit=settings.per_account_concurrency,
+                per_account_limit=per_account_limit,
                 max_concurrent_browsers=settings.max_concurrent_browsers,
                 global_semaphore=global_semaphore,
             )

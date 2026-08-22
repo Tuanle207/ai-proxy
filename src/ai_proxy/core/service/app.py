@@ -57,6 +57,8 @@ def run() -> None:
     import uvicorn
 
     settings = Settings()
+    print(f"Starting AI Proxy service on {settings.api_host}:{settings.api_port}...")
+    print(settings.headless)
     uvicorn.run(
         "ai_proxy.core.service.app:create_app",
         host=settings.api_host,

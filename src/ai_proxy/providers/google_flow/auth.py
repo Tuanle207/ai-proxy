@@ -26,7 +26,7 @@ async def interactive_login(
     context exit) and the account status is set to `active`. Raises `LoginTimeoutError`
     if the session is still on Google's sign-in page after `timeout` seconds.
     """
-    async with backend.browser_context(account, headless=False) as context:
+    async with backend.browser_context(account, headless=False, reuse=False) as context:
         page = await context.new_page()
         try:
             await page.goto(FLOW_URL)
@@ -97,7 +97,9 @@ class GoogleFlowAuth:
                 await page.close()
 
     async def interactive_login(self, session: ProviderSession) -> bool:
-        async with self._backend.browser_context(session.account, headless=False) as context:
+        async with self._backend.browser_context(
+            session.account, headless=False, reuse=False
+        ) as context:
             page = await context.new_page()
             try:
                 await page.goto(FLOW_URL)

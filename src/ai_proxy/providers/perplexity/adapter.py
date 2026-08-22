@@ -1,9 +1,10 @@
 """Perplexity `ProviderAdapter` — the site-driving body.
 
 The page sequence mirrors `GoogleFlowAdapter`:
-`open_thread → submit → wait_for_answer → extract_answer → TaskResult(TEXT artifact)`. `focus`/
-`model`/`search_mode` are validated but not yet applied — they need recon of the corresponding
-controls before the adapter can set them.
+`open_thread → submit → wait_for_answer → extract_answer → TaskResult(TEXT artifact)`. A
+requested `model` is applied through the composer's Model dropdown before submitting
+(best-effort — an unknown name keeps the site default); `focus`/`search_mode` are validated but
+not yet applied — they need recon of the corresponding controls before the adapter can set them.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from ai_proxy.core.worker.failure import AccountEffect, FailurePolicy
 from ai_proxy.providers.perplexity.auth import probe_logged_in
 from ai_proxy.providers.perplexity.config import PerplexitySettings
 from ai_proxy.providers.perplexity.errors import PerplexityError
-from ai_proxy.providers.perplexity.page import extract, navigate, prompt, wait
+from ai_proxy.providers.perplexity.page import extract, navigate, params, prompt, wait
 from ai_proxy.providers.perplexity.params import PerplexityParams
 
 _log = get_logger()
@@ -35,7 +36,7 @@ class PerplexityAdapter:
         return cast(PerplexitySettings, self._deps.settings)
 
     async def execute(self, session: ProviderSession, request: TaskRequest) -> TaskResult:
-        PerplexityParams.model_validate(request.params)
+        parsed = PerplexityParams.model_validate(request.params)
         page = session.page
         if page is None:
             raise RuntimeError("perplexity requires a browser page (ProviderSession.page is None)")
@@ -44,13 +45,21 @@ class PerplexityAdapter:
             "perplexity_execute_start",
             workspace_ref=request.workspace_ref,
             prompt_chars=len(request.prompt),
+            model=parsed.model,
         )
         start = time.monotonic()
         fresh = request.workspace_ref is None
         await navigate.open_thread(page, request.workspace_ref)
         baseline_count = await wait.count_answers(page)
+        baseline_text = await wait.last_answer_text(page)
+        await params.set_model(page, parsed.model)
         await prompt.submit_prompt(page, request.prompt, fresh=fresh)
-        await wait.wait_for_answer(page, timeout=request.timeout, baseline_count=baseline_count)
+        await wait.wait_for_answer(
+            page,
+            timeout=request.timeout,
+            baseline_count=baseline_count,
+            baseline_text=baseline_text,
+        )
         answer = await extract.extract_answer(page)
         workspace_ref = await extract.extract_thread_ref(page)
         if workspace_ref is not None:

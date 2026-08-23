@@ -15,5 +15,5 @@ class PerplexityParams(ProviderParams):
     """
 
     focus: str | None = None
-    model: str | None = None
+    model: str | None = "Claude Sonnet 5"
     search_mode: str | None = None

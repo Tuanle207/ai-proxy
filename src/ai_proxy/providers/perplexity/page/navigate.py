@@ -68,6 +68,7 @@ async def _wait_for_thread_history_loaded(page: Page, target: str) -> None:
             _is_thread_history_response, timeout=_PAGE_RESPONSE_TIMEOUT_MS
         ) as info:
             await page.goto(target, wait_until="domcontentloaded")
+            await page.locator(sel.PROMPT_TEXTBOX).wait_for(state="visible")
         has_more = await _has_next_page(await info.value)
     except PlaywrightTimeoutError:
         _log.warning("perplexity_thread_history_no_response", target=target)

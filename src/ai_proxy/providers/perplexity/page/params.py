@@ -33,7 +33,14 @@ async def set_model(page: Page, model: str | None) -> None:
     """
     if not model:
         return
-    await page.locator(sel.MODEL_BUTTON).first.click(timeout=5000)
+    # The model button is verified to always be the 3rd aria-haspopup="menu" match in the
+    # container (see selectors.py) — its aria-label mirrors current selection, not a fixed name.
+    button = page.locator(sel.MODEL_BUTTON).nth(2)
+    # Skip the open+reselect if it's already the requested model (also avoids re-resolving a
+    # resumed thread's non-default pick).
+    if await button.get_attribute("aria-label") == model:
+        return
+    await button.click(timeout=5000)
     await human_delay()
     try:
         await page.get_by_role("menuitemradio", name=model, exact=True).first.click(timeout=5000)

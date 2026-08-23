@@ -38,7 +38,14 @@ SUBMIT_BUTTON = "button[aria-label='Submit']"
 # inside `div[data-radix-popper-content-wrapper]` — a generic Radix popper host shared by every
 # dropdown on the page — so `page/params.py` matches options by their `menuitemradio` accessible
 # name instead of anchoring on that wrapper.
-MODEL_BUTTON = "button[aria-label='Model']"
+#
+# The trigger's `aria-label` mirrors the *current* selection ("Model" only at the site default,
+# otherwise the picked model's own name), so it can't be pinned to a fixed label/name. Verified
+# live (2026-08-23): among `button[aria-haspopup='menu']` matches in the container (not
+# adjacent to each other), the model button is always the 3rd (index 2) — `params.set_model`
+# selects it via `Locator.nth(2)` on this group selector rather than by label.
+ASK_INPUT_CONTAINER = "div[data-ask-input-container='true']"
+MODEL_BUTTON = f"{ASK_INPUT_CONTAINER} button[aria-haspopup='menu']"
 MODEL_OPTION = "[role='menuitemradio']"
 
 # New answers land on /search/<uuid>; saved sessions are under /library.

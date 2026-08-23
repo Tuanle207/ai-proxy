@@ -1,7 +1,8 @@
 """Perplexity page-params tests: Model dropdown selection before submit (no browser).
 
-Fake page/locators only — the flow under test is `set_model`: click the Model button, click the
-`menuitemradio` matching the requested name, Escape the dropdown. A missing option times out
+Fake page/locators only — the flow under test is `set_model`: skip entirely if the button's
+current aria-label already matches the requested model, otherwise click the Model button, click
+the `menuitemradio` matching the requested name, Escape the dropdown. A missing option times out
 (Playwright) and is swallowed, keeping the site default ("Claude Sonnet 5").
 """
 
@@ -17,15 +18,20 @@ from ai_proxy.providers.perplexity.page import selectors as sel
 
 
 class _FakeModelButton:
-    def __init__(self) -> None:
+    def __init__(self, *, current_label: str = "Model") -> None:
         self.clicked = 0
+        self._current_label = current_label
 
-    @property
-    def first(self) -> _FakeModelButton:
+    def nth(self, index: int) -> _FakeModelButton:
+        assert index == 2
         return self
 
     async def click(self, timeout: int = 0) -> None:
         self.clicked += 1
+
+    async def get_attribute(self, name: str) -> str | None:
+        assert name == "aria-label"
+        return self._current_label
 
 
 class _FakeOptionLocator:
@@ -54,8 +60,8 @@ class _FakeKeyboard:
 
 
 class _FakePage:
-    def __init__(self, *, option_found: bool = True) -> None:
-        self.model_button = _FakeModelButton()
+    def __init__(self, *, option_found: bool = True, current_label: str = "Model") -> None:
+        self.model_button = _FakeModelButton(current_label=current_label)
         self.option = _FakeOptionLocator(times_out=not option_found)
         self.keyboard = _FakeKeyboard()
         self.role_queries: list[dict[str, Any]] = []
@@ -110,3 +116,15 @@ def test_set_model_missing_option_keeps_site_default(monkeypatch: Any) -> None:
     assert page.model_button.clicked == 1
     assert page.option.clicked == 0
     assert page.keyboard.pressed == ["Escape"]  # closes the still-open dropdown
+
+
+def test_set_model_skips_when_already_selected(monkeypatch: Any) -> None:
+    _patch_delays(monkeypatch)
+    page = _FakePage(current_label="Claude Sonnet 5")
+
+    asyncio.run(params_module.set_model(page, "Claude Sonnet 5"))
+
+    assert page.model_button.clicked == 0
+    assert page.option.clicked == 0
+    assert page.role_queries == []
+    assert page.keyboard.pressed == []

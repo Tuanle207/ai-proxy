@@ -31,10 +31,12 @@ def build_launch_options(account: Account, *, headless: bool) -> dict[str, Any]:
 class _WarmSession:
     """A live Camoufox browser + context kept around for reuse between jobs.
 
-    Used by at most one job at a time — never shared concurrently — since two simultaneous
-    tabs against the same logged-in session confused Perplexity's SPA badly enough to time out
-    navigation/composer waits that are otherwise reliable (verified live 2026-08-18). A session
-    records whether it is headed so a headless job never grabs a headed window (or vice-versa).
+    By default a session serves at most one job at a time — two simultaneous tabs against the
+    same logged-in session confused Perplexity's SPA badly enough to time out navigation/composer
+    waits that are otherwise reliable (verified live 2026-08-18). Providers may opt into tab
+    sharing via `max_tabs_per_session > 1`, in which case up to that many concurrent pages run
+    inside one browser (see `CamoufoxBackend`). A session records whether it is headed so a
+    headless job never grabs a headed window (or vice-versa).
     """
 
     def __init__(
@@ -51,7 +53,7 @@ class _WarmSession:
         self.browser = browser
         self.context = context
         self.headless = headless
-        self.in_use = False
+        self.active_pages = 0
         self.evict_task: asyncio.Task[None] | None = None
 
 
@@ -64,18 +66,27 @@ class CamoufoxBackend:
 
     When `idle_ttl_seconds > 0`, a browser+context is kept warm per account (headed or headless,
     whichever the job requests) and reused across consecutive jobs instead of relaunching
-    Camoufox every time — full browser startup (~10s+) otherwise dominates job latency. Concurrent
-    jobs for the same account each get their own warm session (never sharing one — see
-    `_WarmSession`), so up to `per_account_concurrency` sessions may be warm per account at once;
-    each is closed after `idle_ttl_seconds` with no active user, or immediately via `close_all()`
-    (service shutdown). Interactive logins pass `reuse=False` and always get a fresh, one-off
-    browser regardless of this setting.
+    Camoufox every time — full browser startup (~10s+) otherwise dominates job latency. By
+    default concurrent jobs for the same account each get their own warm session (never sharing
+    one — see `_WarmSession`); set `max_tabs_per_session > 1` to instead serve up to that many
+    concurrent pages from a single browser, one tab per job. Each session is closed after
+    `idle_ttl_seconds` with no active page, or immediately via `close_all()` (service shutdown).
+    Interactive logins pass `reuse=False` and always get a fresh, one-off browser regardless of
+    this setting.
     """
 
-    def __init__(self, paths: DataPaths, provider: str, *, idle_ttl_seconds: float = 0.0):
+    def __init__(
+        self,
+        paths: DataPaths,
+        provider: str,
+        *,
+        idle_ttl_seconds: float = 0.0,
+        max_tabs_per_session: int = 1,
+    ):
         self._paths = paths
         self.provider = provider
         self._idle_ttl_seconds = idle_ttl_seconds
+        self._max_tabs_per_session = max(1, max_tabs_per_session)
         self._write_locks: dict[str, asyncio.Lock] = {}
         self._warm: dict[str, list[_WarmSession]] = {}
         self._warm_locks: dict[str, asyncio.Lock] = {}
@@ -147,11 +158,11 @@ class CamoufoxBackend:
         email = account.email.strip().lower()
         lock = self._warm_lock_for(email)
         async with lock:
-            session = self._claim_idle_session(email, headless=headless)
+            session = self._claim_session(email, headless=headless)
             if session is None:
                 session = await self._start_warm_session(account, headless=headless)
                 self._warm.setdefault(email, []).append(session)
-            session.in_use = True
+            session.active_pages += 1
             if session.evict_task is not None:
                 session.evict_task.cancel()
                 session.evict_task = None
@@ -159,11 +170,14 @@ class CamoufoxBackend:
             yield session.context
         finally:
             async with lock:
-                session.in_use = False
-                session.evict_task = asyncio.create_task(self._evict_after_idle(email, session))
+                session.active_pages -= 1
+                if session.active_pages == 0:
+                    session.evict_task = asyncio.create_task(
+                        self._evict_after_idle(email, session)
+                    )
 
-    def _claim_idle_session(self, email: str, *, headless: bool) -> _WarmSession | None:
-        """Return an idle, still-connected warm session matching `headless`, dropping dead ones."""
+    def _claim_session(self, email: str, *, headless: bool) -> _WarmSession | None:
+        """Return a live, matching-`headless` session with a free tab slot, dropping dead ones."""
         sessions = self._warm.get(email, [])
         alive = [s for s in sessions if s.browser.is_connected()]
         if len(alive) != len(sessions):
@@ -172,7 +186,7 @@ class CamoufoxBackend:
             )
             self._warm[email] = alive
         for session in alive:
-            if not session.in_use and session.headless == headless:
+            if session.headless == headless and session.active_pages < self._max_tabs_per_session:
                 return session
         return None
 
@@ -201,7 +215,7 @@ class CamoufoxBackend:
         lock = self._warm_lock_for(email)
         async with lock:
             sessions = self._warm.get(email, [])
-            if session.in_use or session not in sessions:
+            if session.active_pages > 0 or session not in sessions:
                 return
             sessions.remove(session)
             if not sessions:

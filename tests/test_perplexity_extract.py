@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ai_proxy.providers.perplexity.errors import PerplexityError
 from ai_proxy.providers.perplexity.page import extract as extract_module
@@ -45,18 +46,106 @@ class FakeCopyLocator:
         return self._button
 
 
+class FakeArtifactIcon:
+    def __init__(self, present: bool):
+        self._present = present
+        self.dispatched: list[str] = []
+
+    async def count(self) -> int:
+        return 1 if self._present else 0
+
+    async def dispatch_event(self, event: str) -> None:
+        self.dispatched.append(event)
+
+
+class FakeArtifactIconLocator:
+    def __init__(self, icon: FakeArtifactIcon):
+        self._icon = icon
+
+    @property
+    def last(self) -> FakeArtifactIcon:
+        return self._icon
+
+    async def count(self) -> int:
+        return await self._icon.count()
+
+
+class FakeTurnScope:
+    """Backs `page.locator(RESPONSE_LIST_CONTAINER).first.locator('> div').last`."""
+
+    def __init__(self, icon: FakeArtifactIcon):
+        self._icon = icon
+
+    @property
+    def first(self) -> FakeTurnScope:
+        return self
+
+    @property
+    def last(self) -> FakeTurnScope:
+        return self
+
+    def locator(self, selector: str) -> FakeArtifactIconLocator | FakeTurnScope:
+        if selector == sel.FILE_ARTIFACT_ICON:
+            return FakeArtifactIconLocator(self._icon)
+        assert selector == "> div"
+        return self
+
+
+class FakeArtifactPanel:
+    def __init__(self, text: str | None, *, times_out: bool = False):
+        self._text = text
+        self._times_out = times_out
+
+    async def wait_for(self, *, state: str, timeout: int) -> None:
+        if self._times_out:
+            raise PlaywrightTimeoutError("panel never opened")
+
+    async def inner_text(self) -> str:
+        assert self._text is not None
+        return self._text
+
+
+class FakeArtifactPanelLocator:
+    def __init__(self, panel: FakeArtifactPanel):
+        self._panel = panel
+
+    @property
+    def last(self) -> FakeArtifactPanel:
+        return self._panel
+
+
 class FakeCopyPage:
     """`evaluate` distinguishes the three scripts by their content."""
 
-    def __init__(self, copied: str | None, button: FakeCopyButton, *, streaming: bool = False):
+    def __init__(
+        self,
+        copied: str | None,
+        button: FakeCopyButton,
+        *,
+        streaming: bool = False,
+        artifact_icon_present: bool = False,
+        artifact_panel_text: str | None = None,
+        artifact_panel_times_out: bool = False,
+    ):
         self.url = "https://www.perplexity.ai/search/abc"
         self.copied = copied
         self.button = button
         self.stop = FakeStopLocator(streaming=streaming)
+        self.icon = FakeArtifactIcon(present=artifact_icon_present)
+        self.panel = FakeArtifactPanel(artifact_panel_text, times_out=artifact_panel_times_out)
 
-    def locator(self, selector: str) -> FakeCopyLocator | FakeStopLocator:
+    def locator(
+        self, selector: str
+    ) -> (
+        FakeCopyLocator | FakeStopLocator | FakeArtifactIconLocator | FakeArtifactPanelLocator
+        | FakeTurnScope
+    ):
         if selector == sel.STOP_BUTTON_ACTIVE:
             return self.stop
+        if selector == sel.RESPONSE_LIST_CONTAINER:
+            return FakeTurnScope(self.icon)
+        if selector == sel.ARTIFACT_PANEL:
+            return FakeArtifactPanelLocator(self.panel)
         assert selector == sel.COPY_BUTTON
         return FakeCopyLocator(self.button)
 
@@ -92,6 +181,27 @@ def test_extract_answer_no_text_times_out(monkeypatch: Any) -> None:
 def test_extract_answer_still_streaming_raises(monkeypatch: Any) -> None:
     monkeypatch.setattr(extract_module, "_STREAM_STOP_TIMEOUT_SECONDS", 0.0)
     page = FakeCopyPage("text", FakeCopyButton(), streaming=True)
+    with pytest.raises(PerplexityError):
+        asyncio.run(extract_module.extract_answer(page))
+
+
+def test_extract_answer_uses_file_artifact_when_icon_present() -> None:
+    page = FakeCopyPage(
+        "text",
+        FakeCopyButton(),
+        artifact_icon_present=True,
+        artifact_panel_text="generated file contents [1](https://example.com)",
+    )
+    result = asyncio.run(extract_module.extract_answer(page))
+    assert result == "generated file contents [1](https://example.com)"
+    assert page.icon.dispatched == ["click"]
+    assert page.button.dispatched == []
+
+
+def test_extract_file_artifact_panel_timeout_raises() -> None:
+    page = FakeCopyPage(
+        "text", FakeCopyButton(), artifact_icon_present=True, artifact_panel_times_out=True
+    )
     with pytest.raises(PerplexityError):
         asyncio.run(extract_module.extract_answer(page))
 

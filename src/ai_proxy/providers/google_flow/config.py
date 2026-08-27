@@ -13,10 +13,14 @@ class GoogleFlowSettings(ProviderSettings):
     model_config = SettingsConfigDict(env_prefix="AI_PROXY_GOOGLE_FLOW_", extra="ignore")
 
     logo_path: str | None = None
-    delete_project_after_job: bool = False
+    delete_project_after_job: bool = True
     quota_cooldown_minutes: int = 120
     overlay_logo: bool = True
     # Flow accounts are Google sessions: two concurrent browsers on the same account can
     # invalidate each other's cookies (and, with `reuse_latest_project`, race on one project),
     # so same-account concurrency is serialized by default. Override via env if desired.
-    per_account_concurrency: int | None = 1
+    per_account_concurrency: int | None = 4
+    # When > 1, up to this many concurrent jobs on one account share a single browser as
+    # separate tabs (one cookie jar, no cross-browser session conflict). Requires jobs to set
+    # `reuse_latest_project=false` so each tab works in its own project.
+    max_tabs_per_session: int = 4

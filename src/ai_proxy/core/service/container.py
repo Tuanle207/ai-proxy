@@ -71,8 +71,12 @@ class ServiceContainer:
             spec = registry.get(name)
             provider_settings = spec.settings_model()
             accounts = AccountManager(self.paths, name)
+            max_tabs_per_session = getattr(provider_settings, "max_tabs_per_session", None) or 1
             backend = CamoufoxBackend(
-                self.paths, name, idle_ttl_seconds=settings.browser_idle_ttl_seconds
+                self.paths,
+                name,
+                idle_ttl_seconds=settings.browser_idle_ttl_seconds,
+                max_tabs_per_session=max_tabs_per_session,
             )
             per_account_limit = getattr(provider_settings, "per_account_concurrency", None)
             if per_account_limit is None:

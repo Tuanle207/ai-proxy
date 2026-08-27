@@ -93,3 +93,21 @@ THREAD_REST_PATH_MARKER = "/rest/thread/"
 # answers (or embedded code-block copy controls) match the same aria-label.
 COPY_BUTTON = "button[aria-label='Copy']"
 
+# The container holding one item per request/response turn (its direct `> div` children);
+# each item nests several div levels before reaching per-content-block wrappers (e.g.
+# `div[dir='auto'][lang='en'].contents`) — a single response can render more than one such
+# block, so `.last` on a content-block selector alone isn't enough to isolate "the latest
+# response"; scope by the turn item first (see `extract._latest_turn`). Verified live
+# 2026-08-23; `@container` is matched by attribute-token (see `ARTIFACT_PANEL`) to avoid
+# escaping "@" in a class selector.
+RESPONSE_LIST_CONTAINER = "div[class~='@container'] div.flow-root > div"
+
+# Some answers render a generated file instead of markdown; its action bar carries this icon
+# (same any-namespace `href` quirk as LOGGED_IN_BELL). Scoped under the latest turn item (see
+# `RESPONSE_LIST_CONTAINER`) so an older turn's file artifact can't match.
+FILE_ARTIFACT_ICON = "use[*|href='#pplx-icon-file-text']"
+
+# The side panel opened by clicking FILE_ARTIFACT_ICON. Matched by attribute-token (not a `.`
+# class selector) since the class itself contains "/" and "@", which would need CSS escaping.
+ARTIFACT_PANEL = "div[class~='@container/artifact-comment']"
+

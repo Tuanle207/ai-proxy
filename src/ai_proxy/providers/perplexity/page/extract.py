@@ -6,7 +6,8 @@ import asyncio
 import re
 import time
 
-from playwright.async_api import Page
+from playwright.async_api import Locator, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.providers.perplexity.errors import PerplexityError
@@ -37,11 +38,15 @@ _COPY_POLL_SECONDS = 0.1
 _STREAM_STOP_TIMEOUT_SECONDS = 120.0
 _STREAM_STOP_POLL_SECONDS = 0.25
 
+_ARTIFACT_PANEL_WAIT_SECONDS = 10.0
+
 # Citation markers in the copied markdown: Perplexity serializes each chip as a numbered link
 # (sometimes bare). UNVERIFIED against a live capture (2026-08-17) — adjust these once a real
 # copied sample exists (`scripts/_dump_citations.py`).
 _CITATION_LINK = re.compile(r"\[\d+(?:\s*,\s*\d+)*\]\((?:https?://|/)[^)\s]*\)")
 _BARE_CITATION = re.compile(r"\[\d+(?:\s*,\s*\d+)*\]")
+
+_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*\n(.*)\n\s*```\s*$", re.DOTALL)
 
 
 def strip_citations(markdown: str) -> str:
@@ -51,6 +56,12 @@ def strip_citations(markdown: str) -> str:
     text = re.sub(r"(?<=\S) {2,}", " ", text)  # collapse holes left by removals
     text = re.sub(r" +([,.;:!?])", r"\1", text)  # unstick punctuation
     return text.strip()
+
+
+def strip_json_fence(text: str) -> str:
+    """Remove a wrapping ```json ... ``` code fence from copied content, if present."""
+    match = _JSON_FENCE.match(text)
+    return match.group(1).strip() if match else text
 
 
 async def _wait_stream_stopped(page: Page) -> None:
@@ -70,6 +81,29 @@ async def _wait_stream_stopped(page: Page) -> None:
     )
 
 
+def _latest_turn(page: Page) -> Locator:
+    """The last request/response turn item, so a content-block lookup under it can't match a
+    stale item from an earlier turn (a turn can render more than one content block).
+    """
+    return page.locator(sel.RESPONSE_LIST_CONTAINER).first.locator("> div").last
+
+
+async def _extract_file_artifact(page: Page) -> str:
+    """Return a generated file's text via the panel opened by its file-icon indicator."""
+    icon = _latest_turn(page).locator(sel.FILE_ARTIFACT_ICON).last
+    await icon.dispatch_event("click")
+    panel = page.locator(sel.ARTIFACT_PANEL).last
+    try:
+        await panel.wait_for(state="visible", timeout=int(_ARTIFACT_PANEL_WAIT_SECONDS * 1000))
+    except PlaywrightTimeoutError as exc:
+        raise PerplexityError(
+            f"artifact panel did not open within {_ARTIFACT_PANEL_WAIT_SECONDS}s"
+        ) from exc
+    text = await panel.inner_text()
+    _log.info("perplexity_extract_file_artifact", answer_chars=len(text))
+    return text
+
+
 async def extract_answer(page: Page) -> str:
     """Return the latest answer's markdown via its Copy button, citations stripped.
 
@@ -79,8 +113,13 @@ async def extract_answer(page: Page) -> str:
     the payload without touching the OS clipboard. `.last` picks the most recent message's
     copy control (see `COPY_BUTTON` in selectors.py). The stream must have stopped first
     (`_wait_stream_stopped`) so a mid-stream copy can't truncate the answer.
+
+    When the answer is a generated file instead (see `FILE_ARTIFACT_ICON`), the Copy flow is
+    skipped entirely in favor of reading the file's own side panel.
     """
     await _wait_stream_stopped(page)
+    if await _latest_turn(page).locator(sel.FILE_ARTIFACT_ICON).count() > 0:
+        return await _extract_file_artifact(page)
     button = page.locator(sel.COPY_BUTTON).last
     if await button.count() == 0:
         raise PerplexityError("copy button not found (selector churn? see page/selectors.py)")
@@ -92,7 +131,7 @@ async def extract_answer(page: Page) -> str:
             text = await page.evaluate(_READ_COPY_JS)
             if text:
                 await page.evaluate(_CLEAR_COPY_JS)
-                answer = strip_citations(str(text))
+                answer = strip_json_fence(strip_citations(str(text)))
                 _log.info("perplexity_extract_answer", answer_chars=len(answer))
                 return answer
             await asyncio.sleep(_COPY_POLL_SECONDS)

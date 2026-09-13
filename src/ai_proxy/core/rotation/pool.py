@@ -58,10 +58,10 @@ class AccountSlotPool:
         self._total_in_flight = 0
         self._capacity_changed = asyncio.Event()
 
-    async def acquire(self, *, exclude: frozenset[str] = frozenset()) -> AccountSlot:
+    async def acquire(self, *, exclude: frozenset[str] = frozenset(), model: str | None = None) -> AccountSlot:
         waited_polls = 0
         while True:
-            account = self._select_candidate(exclude)
+            account = self._select_candidate(exclude, model=model)
             if account is not None:
                 global_held = False
                 if self._global is not None:
@@ -94,13 +94,13 @@ class AccountSlotPool:
             except TimeoutError:
                 pass
 
-    async def try_acquire(self, *, exclude: frozenset[str] = frozenset()) -> AccountSlot | None:
+    async def try_acquire(self, *, exclude: frozenset[str] = frozenset(), model: str | None = None) -> AccountSlot | None:
         """Reserve a slot immediately, or return `None` if no account/slot is free right now.
 
         Non-blocking counterpart to `acquire` so the dispatch loop can defer an unsatifiable job
         and keep servicing others instead of blocking the whole queue behind it.
         """
-        account = self._select_candidate(exclude)
+        account = self._select_candidate(exclude, model=model)
         if account is None:
             return None
         global_held = False
@@ -140,7 +140,7 @@ class AccountSlotPool:
         self._capacity_changed.set()
         self._capacity_changed.clear()
 
-    def _select_candidate(self, exclude: frozenset[str]) -> Account | None:
+    def _select_candidate(self, exclude: frozenset[str], model: str | None = None) -> Account | None:
         if self._total_in_flight >= self._max_concurrent_browsers:
             return None
         available = [
@@ -152,10 +152,11 @@ class AccountSlotPool:
             return None
         candidates = [account for account in available if account.email not in exclude]
         if not candidates:
-            # Every currently-available account has already been tried for this job (routine
-            # with a single account). Retrying the same account beats blocking `acquire()`
-            # forever — `job_max_attempts` still caps how many times this can happen.
             candidates = available
+        if model:
+            candidates = [a for a in candidates if a.is_model_available(model)]
+        if not candidates:
+            return None
         return self._strategy.select(candidates)
 
     def snapshot(self) -> PoolStats:

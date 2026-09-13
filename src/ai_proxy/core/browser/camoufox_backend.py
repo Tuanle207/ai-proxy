@@ -19,9 +19,13 @@ from ai_proxy.core.paths import DataPaths
 _log = get_logger()
 
 
-def build_launch_options(account: Account, *, headless: bool) -> dict[str, Any]:
+def build_launch_options(
+    account: Account, *, headless: bool, window_size: tuple[int, int] | None = None
+) -> dict[str, Any]:
     """Build Camoufox launch options for `account` (per-account proxy, humanized cursor)."""
     options: dict[str, Any] = {"headless": headless, "humanize": True}
+    if window_size is not None:
+        options["window"] = window_size
     if account.proxy:
         options["proxy"] = {"server": validate_proxy_url(account.proxy)}
         options["geoip"] = True
@@ -82,11 +86,13 @@ class CamoufoxBackend:
         *,
         idle_ttl_seconds: float = 0.0,
         max_tabs_per_session: int = 1,
+        window_size: tuple[int, int] | None = (1280, 720),
     ):
         self._paths = paths
         self.provider = provider
         self._idle_ttl_seconds = idle_ttl_seconds
         self._max_tabs_per_session = max(1, max_tabs_per_session)
+        self._window_size = window_size
         self._write_locks: dict[str, asyncio.Lock] = {}
         self._warm: dict[str, list[_WarmSession]] = {}
         self._warm_locks: dict[str, asyncio.Lock] = {}
@@ -136,7 +142,7 @@ class CamoufoxBackend:
     async def _fresh_context(
         self, account: Account, *, headless: bool
     ) -> AsyncIterator[BrowserContext]:
-        options = build_launch_options(account, headless=headless)
+        options = build_launch_options(account, headless=headless, window_size=self._window_size)
         state_file = self._paths.storage_state_file(self.provider, account.email)
         async with AsyncCamoufox(**options) as raw_browser:
             # persistent_context is not used above, so this is always a Browser.
@@ -191,7 +197,7 @@ class CamoufoxBackend:
         return None
 
     async def _start_warm_session(self, account: Account, *, headless: bool) -> _WarmSession:
-        options = build_launch_options(account, headless=headless)
+        options = build_launch_options(account, headless=headless, window_size=self._window_size)
         state_file = self._paths.storage_state_file(self.provider, account.email)
         cm = AsyncCamoufox(**options)
         browser = cast(Browser, await cm.__aenter__())

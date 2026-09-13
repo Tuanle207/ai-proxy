@@ -1,19 +1,18 @@
-"""FastAPI app factory + lifespan wiring (§4.1, §5.1, Phase 7)."""
+"""FastAPI app factory + lifespan."""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
 from ai_proxy.core.config import Settings
 from ai_proxy.core.logging_setup import configure_logging
-from ai_proxy.core.provider import registry
 from ai_proxy.core.service.container import ServiceContainer
-from ai_proxy.core.service.deps import configure_middleware, require_api_key
+from ai_proxy.core.service.deps import configure_middleware
 from ai_proxy.core.service.errors import register_error_handlers
-from ai_proxy.core.service.routers import artifacts, events, jobs, ops, providers, tasks
+from ai_proxy.core.service.routers import chat, download, images, ops, providers, upload, media
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -34,34 +33,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_middleware(app, settings)
     register_error_handlers(app)
     app.include_router(providers.router)
-    app.include_router(tasks.router)
-    app.include_router(jobs.router)
     app.include_router(ops.router)
-    app.include_router(events.router)
-    app.include_router(artifacts.router)
-
-    # Mount each provider's optional API router under /v1/providers/{name}.
-    for name in container.provider_names():
-        spec = registry.get(name)
-        if spec.api_router is not None:
-            app.include_router(
-                spec.api_router,
-                prefix=f"/v1/providers/{name}",
-                dependencies=[Depends(require_api_key)],
-            )
+    app.include_router(chat.router)
+    app.include_router(images.router)
+    app.include_router(upload.router)
+    app.include_router(media.router)
+    app.include_router(download.router)
     return app
 
 
 def run() -> None:
-    """Console entrypoint for `ai-proxy-api` (uvicorn with the app factory)."""
     import uvicorn
 
     settings = Settings()
     print(f"Starting AI Proxy service on {settings.api_host}:{settings.api_port}...")
-    print(settings.headless)
     uvicorn.run(
         "ai_proxy.core.service.app:create_app",
         host=settings.api_host,
         port=settings.api_port,
         factory=True,
     )
+
+
+if __name__ == "__main__":
+    run()

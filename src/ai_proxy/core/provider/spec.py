@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 
-import typer
-from fastapi import APIRouter
-
 from ai_proxy.core.config import ProviderSettings
-from ai_proxy.core.db.engine import Database
-from ai_proxy.core.db.jobs_repo import JobRecord
-from ai_proxy.core.db.migrations import Migration
 from ai_proxy.core.models import TaskKind
 from ai_proxy.core.provider.adapter import ProviderAdapter
 from ai_proxy.core.provider.auth import AuthHandler
@@ -41,9 +35,3 @@ class ProviderSpec:
     settings_model: type[ProviderSettings]
     build_adapter: Callable[[ProviderRuntimeDeps], ProviderAdapter]
     build_auth: Callable[[ProviderRuntimeDeps], AuthHandler]
-    migrations: Sequence[Migration] = ()
-    api_router: APIRouter | None = None
-    cli_app: typer.Typer | None = None
-    # Optional recovery hook: core's startup recovery calls it (with the live db) for each
-    # interrupted `running` job so a provider can archive its workspace reference.
-    on_orphan: Callable[[Database, JobRecord], Awaitable[None]] | None = None

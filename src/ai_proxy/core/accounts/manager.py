@@ -168,6 +168,28 @@ class AccountManager:
             await self._save_locked()
         return account
 
+    def is_model_available(self, email: str, model: str, now: datetime | None = None) -> bool:
+        """Whether a specific model is usable on this account (not on per-model cooldown)."""
+        return self._get_or_raise(email).is_model_available(model, now)
+
+    def _next_midnight_utc(self, now: datetime | None = None) -> datetime:
+        now = now or datetime.now(UTC)
+        return datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC) + timedelta(days=1)
+
+    def set_model_cooldown(self, email: str, model: str) -> Account:
+        """Mark a model exhausted on this account until next midnight UTC."""
+        account = self._get_or_raise(email)
+        account.model_cooldowns[model] = self._next_midnight_utc()
+        self._save()
+        return account
+
+    async def set_model_cooldown_async(self, email: str, model: str) -> Account:
+        async with self._write_lock:
+            account = self._get_or_raise(email)
+            account.model_cooldowns[model] = self._next_midnight_utc()
+            await self._save_locked()
+        return account
+
     async def reload_if_changed(self) -> bool:
         """Reload `accounts.yaml` if its mtime changed since the last load (§6.7)."""
         mtime = self._accounts_mtime()

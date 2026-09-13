@@ -30,6 +30,10 @@ class GenerationTimeoutError(AIProxyError):
 class QuotaExceededError(AIProxyError):
     """Raised when Flow reports the account is out of generation quota/credits."""
 
+    def __init__(self, message: str, model: str | None = None):
+        super().__init__(message)
+        self.model = model
+
 
 class SelectorNotFoundError(AIProxyError):
     """Raised when an expected page element cannot be located (likely a UI change)."""

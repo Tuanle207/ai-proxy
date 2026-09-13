@@ -25,6 +25,7 @@ class AccountEffect(enum.StrEnum):
     NEEDS_LOGIN = "needs_login"
     COOLDOWN = "cooldown"
     QUOTA_COOLDOWN = "quota_cooldown"
+    MODEL_QUOTA_COOLDOWN = "model_quota_cooldown"
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class FailurePolicy:
     retryable: bool
     error_code: str
     account_effect: AccountEffect
+    model: str | None = None
 
 
 def default_classify_failure(exc: BaseException) -> FailurePolicy:
@@ -39,6 +41,8 @@ def default_classify_failure(exc: BaseException) -> FailurePolicy:
     if isinstance(exc, AuthError):
         return FailurePolicy(True, "auth_error", AccountEffect.NEEDS_LOGIN)
     if isinstance(exc, QuotaExceededError):
+        if exc.model:
+            return FailurePolicy(True, "model_quota_exceeded", AccountEffect.MODEL_QUOTA_COOLDOWN, model=exc.model)
         return FailurePolicy(True, "quota_exceeded", AccountEffect.QUOTA_COOLDOWN)
     if isinstance(exc, GenerationTimeoutError):
         return FailurePolicy(True, "timeout", AccountEffect.COOLDOWN)

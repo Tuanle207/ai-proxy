@@ -76,6 +76,7 @@ async def _wait_stream_stopped(page: Page) -> None:
         if await stop.count() == 0:
             return
         await asyncio.sleep(_STREAM_STOP_POLL_SECONDS)
+    _log.error("perplexity_stream_stop_timed_out", page_url=page.url)
     raise PerplexityError(
         f"response still streaming (stop control active) after {_STREAM_STOP_TIMEOUT_SECONDS}s"
     )
@@ -96,6 +97,7 @@ async def _extract_file_artifact(page: Page) -> str:
     try:
         await panel.wait_for(state="visible", timeout=int(_ARTIFACT_PANEL_WAIT_SECONDS * 1000))
     except PlaywrightTimeoutError as exc:
+        _log.exception("perplexity_artifact_panel_open_failed", page_url=page.url)
         raise PerplexityError(
             f"artifact panel did not open within {_ARTIFACT_PANEL_WAIT_SECONDS}s"
         ) from exc
@@ -122,6 +124,7 @@ async def extract_answer(page: Page) -> str:
         return await _extract_file_artifact(page)
     button = page.locator(sel.COPY_BUTTON).last
     if await button.count() == 0:
+        _log.error("perplexity_copy_button_not_found", page_url=page.url)
         raise PerplexityError("copy button not found (selector churn? see page/selectors.py)")
     for click_attempt in range(2):
         await page.evaluate(_HOOK_COPY_JS)
@@ -136,6 +139,7 @@ async def extract_answer(page: Page) -> str:
                 return answer
             await asyncio.sleep(_COPY_POLL_SECONDS)
         _log.warning("perplexity_copy_click_no_text", click_attempt=click_attempt)
+    _log.error("perplexity_copy_button_no_text", page_url=page.url, timeout=_COPY_WAIT_SECONDS)
     raise PerplexityError(f"copy button produced no text within {_COPY_WAIT_SECONDS}s")
 
 

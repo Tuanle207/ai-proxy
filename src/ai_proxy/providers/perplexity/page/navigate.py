@@ -71,7 +71,7 @@ async def _wait_for_thread_history_loaded(page: Page, target: str) -> None:
             await page.locator(sel.PROMPT_TEXTBOX).wait_for(state="visible")
         has_more = await _has_next_page(await info.value)
     except PlaywrightTimeoutError:
-        _log.warning("perplexity_thread_history_no_response", target=target)
+        _log.error("perplexity_thread_history_no_response", target=target, page_url=page.url)
         return
 
     deadline = time.monotonic() + _THREAD_LOAD_TIMEOUT_SECONDS
@@ -83,6 +83,9 @@ async def _wait_for_thread_history_loaded(page: Page, target: str) -> None:
                 await page.evaluate(_SCROLL_TO_BOTTOM_JS, sel.THREAD_SCROLL_CONTAINER)
             has_more = await _has_next_page(await info.value)
         except PlaywrightTimeoutError:
+            _log.error(
+                "perplexity_thread_history_scroll_timed_out", target=target, page_url=page.url
+            )
             break
 
 

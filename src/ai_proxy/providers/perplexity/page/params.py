@@ -45,6 +45,6 @@ async def set_model(page: Page, model: str | None) -> None:
     try:
         await page.get_by_role("menuitemradio", name=model, exact=True).first.click(timeout=5000)
     except PlaywrightTimeoutError:
-        _log.warning("perplexity_model_not_found", model=model)
+        _log.error("perplexity_model_not_found", model=model, page_url=page.url)
     await page.keyboard.press("Escape")
     await human_delay()

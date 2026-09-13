@@ -18,18 +18,24 @@ from ai_proxy.providers.google_flow.page import selectors as sel
 
 
 class _FakeClickable:
-    def __init__(self, *, times_out: bool = False) -> None:
+    def __init__(self, *, times_out: bool = False, text: str = "") -> None:
         self._times_out = times_out
+        self._text = text
         self.clicked = 0
+        self.click_forces: list[bool] = []
 
     @property
     def first(self) -> _FakeClickable:
         return self
 
-    async def click(self, timeout: int = 0) -> None:
+    async def click(self, timeout: int = 0, force: bool = False) -> None:
         if self._times_out:
             raise PlaywrightTimeoutError("not found")
         self.clicked += 1
+        self.click_forces.append(force)
+
+    async def inner_text(self) -> str:
+        return self._text
 
 
 class _FakeTablist:
@@ -38,15 +44,20 @@ class _FakeTablist:
     def __init__(self, *, option_found: bool) -> None:
         self.tab = _FakeClickable(times_out=not option_found)
         self.role_queries: list[dict[str, Any]] = []
-        self.model_button = _FakeClickable()
+        self.model_button = _FakeClickable(text="🍌 Nano Banana Lite")
+        self.selected = _FakeClickable(text="16:9" if option_found else "x1")
 
     def get_by_role(self, role: str, *, name: str, exact: bool) -> _FakeClickable:
         self.role_queries.append({"role": role, "name": name, "exact": exact})
         return self.tab
 
-    def locator(self, selector: str) -> _FakeClickable:
-        assert selector == sel.MODEL_BUTTON_XPATH
-        return self.model_button
+    def locator(self, selector: str, **kwargs: Any) -> _FakeClickable:
+        if selector == sel.MODEL_BUTTON:
+            return self.model_button
+        if selector == "mat-button-toggle.mat-button-toggle-checked":
+            return self.selected
+        assert selector == "mat-button-toggle"
+        return self.tab
 
 
 class _FakeTablistLocator:
@@ -62,10 +73,14 @@ class _FakeSaveButton:
         self._label = label
         self.clicked = 0
 
+    @property
+    def first(self) -> _FakeSaveButton:
+        return self
+
     async def inner_text(self) -> str:
         return self._label or ""
 
-    async def click(self, timeout: int = 0) -> None:
+    async def click(self, timeout: int = 0, force: bool = False) -> None:
         self.clicked += 1
 
 
@@ -101,6 +116,14 @@ class _FakeDropdown:
         self.role_queries.append({"role": role, "name": name, "exact": exact})
         return self.option
 
+    async def wait_for(self, *, state: str, timeout: int = 0) -> None:
+        assert state == "visible"
+
+    def locator(self, selector: str, *, has_text: str) -> _FakeClickable:
+        assert selector == "flow-menu-item"
+        self.role_queries.append({"selector": selector, "has_text": has_text})
+        return self.option
+
 
 class _FakePage:
     def __init__(
@@ -111,9 +134,11 @@ class _FakePage:
         model_found: bool = True,
         save_label: str | None = "Lưu",
     ) -> None:
+        self.url = "https://labs.google/fx/tools/flow/project/test"
         self.settings_button = _FakeClickable()
         self.ratio_tablist = _FakeTablist(option_found=ratio_found)
         self.count_tablist = _FakeTablist(option_found=count_found)
+        self.count_tablist.selected = _FakeClickable(text="x1")
         self.model_dropdown = _FakeDropdown(option_found=model_found)
         self.save_button = _FakeSaveButton(label=save_label)
         self.keyboard = _FakeKeyboard()
@@ -121,10 +146,14 @@ class _FakePage:
     def locator(self, selector: str) -> _FakeClickable | _FakeTablistLocator | _FakeDropdown:
         if selector == sel.SETTINGS_BUTTON:
             return self.settings_button
-        if selector == sel.SETTINGS_TABLIST:
+        if selector == sel.SETTINGS_BUTTON_TOGGLE_GROUP:
             return _FakeTablistLocator(self.ratio_tablist, self.count_tablist)
-        if selector == sel.RADIX_POPPER_DROPDOWN:
+        if selector == f"{sel.CDK_OVERLAY_DROPDOWN} .flow-model-picker-panel":
             return self.model_dropdown
+        if selector == sel.FLOW_SETTINGS_VIEW:
+            return self.count_tablist
+        if selector == ".save-container button":
+            return self.save_button
         raise AssertionError(f"unexpected selector {selector!r}")
 
     def get_by_role(self, role: str, *, name: str | None = None) -> _FakeButtons:
@@ -132,15 +161,7 @@ class _FakePage:
         return _FakeButtons([self.save_button])
 
 
-def _patch_delays(monkeypatch: Any) -> None:
-    async def _no_delay(*args: Any, **kwargs: Any) -> None:
-        return None
-
-    monkeypatch.setattr(params_module, "human_delay", _no_delay)
-
-
-def test_set_aspect_ratio_noop_when_unset(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_aspect_ratio_noop_when_unset() -> None:
     page = _FakePage()
 
     asyncio.run(params_module.set_aspect_ratio(page, None))
@@ -148,19 +169,16 @@ def test_set_aspect_ratio_noop_when_unset(monkeypatch: Any) -> None:
     assert page.ratio_tablist.tab.clicked == 0
 
 
-def test_set_aspect_ratio_clicks_tab_in_first_tablist(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_aspect_ratio_clicks_tab_in_first_tablist() -> None:
     page = _FakePage()
 
     asyncio.run(params_module.set_aspect_ratio(page, "9:16"))
 
     assert page.ratio_tablist.tab.clicked == 1
-    assert page.ratio_tablist.role_queries == [{"role": "tab", "name": "9:16", "exact": True}]
-    assert page.count_tablist.role_queries == []
+    assert page.ratio_tablist.role_queries == []
 
 
-def test_set_aspect_ratio_missing_option_keeps_default(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_aspect_ratio_missing_option_keeps_default() -> None:
     page = _FakePage(ratio_found=False)
 
     asyncio.run(params_module.set_aspect_ratio(page, "1:1"))
@@ -168,19 +186,16 @@ def test_set_aspect_ratio_missing_option_keeps_default(monkeypatch: Any) -> None
     assert page.ratio_tablist.tab.clicked == 0
 
 
-def test_set_count_clicks_tab_in_second_tablist(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_count_clicks_tab_in_second_tablist() -> None:
     page = _FakePage()
 
     asyncio.run(params_module.set_count(page, 3))
 
     assert page.count_tablist.tab.clicked == 1
-    assert page.count_tablist.role_queries == [{"role": "tab", "name": "x3", "exact": True}]
-    assert page.ratio_tablist.role_queries == []
+    assert page.count_tablist.role_queries == []
 
 
-def test_set_model_noop_when_unset(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_model_noop_when_unset() -> None:
     page = _FakePage()
 
     asyncio.run(params_module.set_model(page, None))
@@ -188,8 +203,7 @@ def test_set_model_noop_when_unset(monkeypatch: Any) -> None:
     assert page.count_tablist.model_button.clicked == 0
 
 
-def test_set_model_opens_dropdown_and_clicks_matching_option(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_model_opens_dropdown_and_clicks_matching_option() -> None:
     page = _FakePage()
 
     asyncio.run(params_module.set_model(page, "Nano Banana 2"))
@@ -197,13 +211,22 @@ def test_set_model_opens_dropdown_and_clicks_matching_option(monkeypatch: Any) -
     assert page.count_tablist.model_button.clicked == 1
     assert page.model_dropdown.option.clicked == 1
     assert page.model_dropdown.role_queries == [
-        {"role": "menuitem", "name": "Nano Banana 2", "exact": True}
+        {"selector": "flow-menu-item", "has_text": "🍌 Nano Banana 2 Lite"}
     ]
     assert page.ratio_tablist.model_button.clicked == 0
 
 
-def test_set_model_missing_option_keeps_default(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_set_model_maps_legacy_nano_banana_2_name() -> None:
+    page = _FakePage()
+
+    asyncio.run(params_module.set_model(page, "Nano Banana 2"))
+
+    assert page.model_dropdown.role_queries == [
+        {"selector": "flow-menu-item", "has_text": "🍌 Nano Banana 2 Lite"}
+    ]
+
+
+def test_set_model_missing_option_keeps_default() -> None:
     page = _FakePage(model_found=False)
 
     asyncio.run(params_module.set_model(page, "Nonexistent Model"))
@@ -212,8 +235,7 @@ def test_set_model_missing_option_keeps_default(monkeypatch: Any) -> None:
     assert page.model_dropdown.option.clicked == 0
 
 
-def test_configure_generation_opens_once_applies_all_then_saves(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_configure_generation_opens_once_applies_all_then_saves() -> None:
     page = _FakePage()
 
     asyncio.run(
@@ -223,6 +245,7 @@ def test_configure_generation_opens_once_applies_all_then_saves(monkeypatch: Any
     )
 
     assert page.settings_button.clicked == 1
+    assert page.settings_button.click_forces == [True]
     assert page.count_tablist.model_button.clicked == 1
     assert page.model_dropdown.option.clicked == 1
     assert page.ratio_tablist.tab.clicked == 1
@@ -231,13 +254,12 @@ def test_configure_generation_opens_once_applies_all_then_saves(monkeypatch: Any
     assert page.keyboard.pressed == []
 
 
-def test_configure_generation_falls_back_to_escape_when_no_save_button(monkeypatch: Any) -> None:
-    _patch_delays(monkeypatch)
+def test_configure_generation_clicks_save_button() -> None:
     page = _FakePage(save_label="unrelated button")
 
     asyncio.run(
         params_module.configure_generation(page, model=None, aspect_ratio=None, count=1)
     )
 
-    assert page.save_button.clicked == 0
-    assert page.keyboard.pressed == ["Escape"]
+    assert page.save_button.clicked == 1
+    assert page.keyboard.pressed == []

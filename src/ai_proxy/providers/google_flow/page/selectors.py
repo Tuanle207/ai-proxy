@@ -6,7 +6,7 @@ Key findings that shaped these selectors:
 - The app has NO `data-testid` or `aria-label` attributes on most controls, and its CSS
   class names are per-build styled-components hashes (unstable). The one stable, locale-
   independent anchor is the *Material Symbols icon ligature name* rendered as element text
-  (e.g. "add_2", "arrow_forward", "tune") — these stay in English regardless of the
+   (e.g. "add", "arrow_forward", "tune") — these stay in English regardless of the
   account's UI language.
 - The public marketing page (`labs.google/flow`) requires no login and is NOT a valid
   "is the user logged in" signal. The real, auth-gated app lives at `labs.google/fx/tools/flow`
@@ -41,31 +41,28 @@ Key findings that shaped these selectors:
 from __future__ import annotations
 
 # Public marketing page — reachable without login, NOT a valid auth check.
-FLOW_MARKETING_URL = "https://labs.google/flow"
+FLOW_MARKETING_URL = "https://flow.google.com/about"
 
 # The real, auth-gated app entry point. Redirects to a locale-specific path when
 # authenticated (e.g. ".../vi/tools/flow") and to accounts.google.com when not.
-FLOW_URL = "https://labs.google/fx/tools/flow"
+FLOW_URL = "https://flow.google.com"
 
 # Substring present in the URL when Google redirects an unauthenticated session to sign-in.
 LOGIN_REDIRECT_HOST = "accounts.google.com"
 
 # --- Verified against a live session ---
-NEW_PROJECT_BUTTON = "button:has-text('add_2')"
-SETTINGS_BUTTON = "button:has-text('tune')"
-# First tablist = aspect ratio ("16:9".."9:16", default "16:9"); second = count ("x1".."x4").
-SETTINGS_TABLIST = "div[role='tablist']"
+# Verified 2026-09-06: Flow changed the new-project Material icon from `add_2` to `add`.
+# Material icon ligatures remain English even when Flow's visible UI is localized.
+NEW_PROJECT_BUTTON = "button:has(mat-icon:has-text('add'))"
+SETTINGS_BUTTON = "button:has(mat-icon:has-text('tune'))"
+FLOW_SETTINGS_VIEW = "flow-settings-view"
+SETTINGS_BUTTON_TOGGLE_GROUP = "flow-toggles"
 SETTINGS_SAVE_BUTTON_LABELS = ("lưu", "save")
-# Model dropdown trigger: the element right after the count tablist's parent (self-or-descendant,
-# since that sibling may already be the button or may just wrap it).
-MODEL_BUTTON_XPATH = (
-    "xpath=../following-sibling::*[1]/descendant-or-self::button[@aria-haspopup='menu']"
-)
-# Generic Radix UI popper wrapper — shared by the model dropdown and the project header menu.
-RADIX_POPPER_DROPDOWN = "div[data-radix-popper-content-wrapper]"
-PROMPT_TEXTBOX = "[role='textbox']"
-SUBMIT_BUTTON = "button:has-text('arrow_forward')"
-RESULT_IMAGE_THUMBNAIL = "img[src*='media.getMediaUrlRedirect']"
+MODEL_BUTTON = "button .model-select-trigger-label"
+CDK_OVERLAY_DROPDOWN = "div.cdk-overlay-pane"
+PROMPT_TEXTBOX = "flow-rich-text-editor.prompt-input div[contenteditable='true']"
+SUBMIT_BUTTON = "flow-generate-icon-button button:has(mat-icon:has-text('arrow_forward'))"
+RESULT_IMAGE_THUMBNAIL = "flow-grid-tile-container flow-image-tile img"
 
 # Existing-project cards on the Flow home page (a virtualized list, most-recent-first); each
 # wraps an <a href=".../tools/flow/project/<uuid>"> around a thumbnail. Verified 2026-08-15

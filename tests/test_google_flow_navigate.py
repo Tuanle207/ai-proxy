@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from ai_proxy.core.errors import AuthError
+from ai_proxy.core.errors import AuthError, SelectorNotFoundError
 from ai_proxy.providers.google_flow.page import navigate as navigate_module
 from ai_proxy.providers.google_flow.page.selectors import FLOW_URL
 
@@ -46,3 +46,15 @@ def test_open_flow_ok_on_authenticated_page(_no_delay: None) -> None:
     asyncio.run(navigate_module.open_flow(page))
 
     assert page.goto_calls == [FLOW_URL]
+
+
+def test_open_project_raises_without_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = _FakePage(FLOW_URL)
+
+    async def _unavailable(*args: Any, **kwargs: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(navigate_module, "_navigate_to_project", _unavailable)
+
+    with pytest.raises(SelectorNotFoundError, match="configured-project"):
+        asyncio.run(navigate_module.open_project(page, "configured-project"))

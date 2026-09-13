@@ -14,10 +14,12 @@ from typing import cast
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_proxy.providers.perplexity.config import PerplexitySettings
 from ai_proxy.providers.perplexity.page import selectors as sel
 
+_log = get_logger()
 _NETWORK_IDLE_TIMEOUT_MS = 10_000
 _SETTLE_TIMEOUT_SECONDS = 5.0
 _SETTLE_POLL_SECONDS = 0.5
@@ -39,7 +41,7 @@ async def probe_logged_in(page: Page) -> bool:
     try:
         await page.wait_for_load_state("networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS)
     except PlaywrightTimeoutError:
-        pass
+        _log.error("perplexity_network_idle_timed_out", page_url=page.url)
     bell = page.locator(sel.LOGGED_IN_BELL)
     deadline = time.monotonic() + _SETTLE_TIMEOUT_SECONDS
     while time.monotonic() < deadline:

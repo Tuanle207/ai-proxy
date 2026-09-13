@@ -1,17 +1,38 @@
-"""Provider discovery endpoints (§2.8, Phase 7): list providers + capabilities."""
+"""Provider discovery endpoints: list providers + capabilities."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from ai_proxy.core.provider import registry
 from ai_proxy.core.provider.params import json_schema
 from ai_proxy.core.provider.registry import UnknownProviderError
 from ai_proxy.core.provider.spec import ProviderSpec
 from ai_proxy.core.service.deps import require_api_key
-from ai_proxy.core.service.schemas import CapabilitiesResponse, ProviderDetail, ProviderInfo
 
 router = APIRouter(prefix="/v1", tags=["providers"], dependencies=[Depends(require_api_key)])
+
+
+class CapabilitiesResponse(BaseModel):
+    task_kinds: list[str]
+    max_outputs_per_request: int
+    supports_reference_inputs: bool
+    supports_workspace_reuse: bool
+    requires_browser: bool
+
+
+class ProviderInfo(BaseModel):
+    name: str
+    display_name: str
+    capabilities: CapabilitiesResponse
+
+
+class ProviderDetail(BaseModel):
+    name: str
+    display_name: str
+    capabilities: CapabilitiesResponse
+    params_schema: dict
 
 
 def _capabilities(spec: ProviderSpec) -> CapabilitiesResponse:

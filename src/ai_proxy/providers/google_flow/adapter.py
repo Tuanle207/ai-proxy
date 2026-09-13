@@ -8,22 +8,24 @@ returns artifacts. Flow options travel in `GoogleFlowParams`; Flow settings in `
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import cast
 
+from ai_proxy.core.errors import QuotaExceededError, SelectorNotFoundError
 from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Artifact, TaskRequest, TaskResult, WorkspaceRef
+from ai_proxy.core.paths import DataPaths
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
-from ai_proxy.core.worker.failure import FailurePolicy
-from ai_proxy.core.worker.metadata import extract_image_metadata
+from ai_proxy.core.failure import FailurePolicy
+from ai_proxy.core.metadata import extract_image_metadata
 from ai_proxy.providers.google_flow.config import GoogleFlowSettings
 from ai_proxy.providers.google_flow.page import download, navigate, prompt, wait
 from ai_proxy.providers.google_flow.page import params as page_params
 from ai_proxy.providers.google_flow.page.selectors import LOGIN_REDIRECT_HOST
 from ai_proxy.providers.google_flow.params import GoogleFlowParams
-from ai_proxy.providers.google_flow.postprocess import logo_overlay
+from ai_proxy.providers.google_flow.reference_cache import ReferenceCache
 
 _log = get_logger()
 
@@ -36,6 +38,31 @@ class GoogleFlowAdapter:
 
     def __init__(self, deps: ProviderRuntimeDeps):
         self._deps = deps
+        self._cache = ReferenceCache(
+            deps.paths.provider_dir("google_flow") / "reference_cache.json"
+        )
+        self._default_projects = self._load_default_projects(deps.paths)
+
+    @staticmethod
+    def _load_default_projects(paths: DataPaths) -> dict[str, str]:
+        """Load default project IDs per account from JSON (if present)."""
+        path = paths.provider_dir("google_flow") / "default_projects.json"
+        if not path.is_file():
+            return {}
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        if not isinstance(loaded, dict) or not all(
+            isinstance(email, str) and isinstance(project_id, str)
+            for email, project_id in loaded.items()
+        ):
+            return {}
+        return {email.lower(): project_id for email, project_id in loaded.items()}
+
+    def _get_default_project(self, email: str) -> str | None:
+        """Return a known default project ID for the account, if one exists."""
+        return self._default_projects.get(email.lower())
 
     @property
     def _settings(self) -> GoogleFlowSettings:
@@ -56,38 +83,89 @@ class GoogleFlowAdapter:
         _log.info(
             "google_flow_execute_start",
             prompt_chars=len(request.prompt),
-            reuse_latest_project=params.reuse_latest_project,
+            reuse_default_project=params.reuse_default_project,
         )
-        await navigate.open_flow(page)
-        baseline_urls: frozenset[str]
-        if params.reuse_latest_project:
-            await navigate.ensure_project(page, reuse_latest=True)
-            baseline_urls = await download.collect_existing_image_urls(page)
-        else:
-            workspace_ref = await navigate.create_project(page)
-            await session.on_workspace_created(workspace_ref)
-            baseline_urls = frozenset()
-        await navigate.switch_to_image_mode(page)
-        await page_params.configure_generation(
-            page,
-            model=params.model,
-            aspect_ratio=params.aspect_ratio,
-            count=effective_count,
-        )
-        await prompt.submit_prompt(page, request.prompt, request.inputs)
-        await wait.wait_for_completion(
-            page,
-            timeout=request.timeout,
-            baseline_count=len(baseline_urls),
-            target_count=len(baseline_urls) + effective_count,
-        )
-        urls = await download.collect_image_urls(page, effective_count, exclude=baseline_urls)
-        artifacts = await download.download_images(
-            page, urls, session.output_dir, timestamp=run_started_at
-        )
-        await self._finalize_metadata(artifacts, session)
-        if params.overlay_logo:
-            await self._apply_logo_overlay(artifacts, session)
+        try:
+            step = "open_flow"
+            if params.reuse_default_project:
+                step = "resolve_default_project"
+                default_project_id = self._get_default_project(session.account.email)
+                if default_project_id is None:
+                    raise SelectorNotFoundError(
+                        f"no default Google Flow project configured for {session.account.email!r}"
+                    )
+                step = "open_project"
+                await navigate.open_project(page, default_project_id)
+                workspace_ref = default_project_id
+                step = "collect_existing_image_urls"
+            else:
+                await navigate.open_flow(page)
+                step = "create_project"
+                workspace_ref = await navigate.create_project(page)
+                step = "record_workspace"
+                await session.on_workspace_created(workspace_ref)
+            step = "switch_to_image_mode"
+            await navigate.switch_to_image_mode(page)
+            step = "configure_generation"
+            await page_params.configure_generation(
+                page,
+                model=params.model,
+                aspect_ratio=params.aspect_ratio,
+                count=effective_count,
+            )
+            step = "submit_prompt"
+            await prompt.submit_prompt(
+                page, request.prompt, request.inputs,
+                cache=self._cache,
+                account_email=session.account.email,
+                workspace_ref=workspace_ref,
+            )
+            step = "wait_for_completion"
+            await wait.wait_for_completion(
+                page,
+                timeout=request.timeout,
+            )
+        except QuotaExceededError as e:
+            e.model = params.model
+            _log.exception(
+                "google_flow_step_failed",
+                step=step,
+                workspace_ref=workspace_ref,
+                model=params.model,
+                aspect_ratio=params.aspect_ratio,
+                count=effective_count,
+                page_url=page.url,
+            )
+            raise
+        except Exception:
+            _log.exception(
+                "google_flow_step_failed",
+                step=step,
+                workspace_ref=workspace_ref,
+                model=params.model,
+                aspect_ratio=params.aspect_ratio,
+                count=effective_count,
+                page_url=page.url,
+            )
+            raise
+        try:
+            step = "collect_image_urls"
+            urls = await download.collect_image_urls(page, effective_count)
+            step = "download_images"
+            artifacts = await download.download_images(
+                page, urls, session.output_dir, timestamp=run_started_at
+            )
+            step = "finalize_metadata"
+            await self._finalize_metadata(artifacts, session)
+        except Exception:
+            _log.exception(
+                "google_flow_step_failed",
+                step=step,
+                workspace_ref=workspace_ref,
+                count=effective_count,
+                page_url=page.url,
+            )
+            raise
 
         duration = time.monotonic() - start
         _log.info(
@@ -121,12 +199,7 @@ class GoogleFlowAdapter:
                 await page.close()
 
     async def cleanup(self, session: ProviderSession, ref: WorkspaceRef | None) -> None:
-        if not self._settings.delete_project_after_job or ref is None or session.page is None:
-            return
-        try:
-            await navigate.delete_project(session.page, ref)
-        except Exception:
-            pass  # best-effort; a failed cleanup must never fail an otherwise-successful job
+        return
 
     async def _finalize_metadata(
         self, artifacts: list[Artifact], session: ProviderSession
@@ -144,19 +217,4 @@ class GoogleFlowAdapter:
             artifact.mime = meta.content_type
             artifact.rel_path = local_path.relative_to(session.paths.outputs_dir)
 
-    async def _apply_logo_overlay(
-        self, artifacts: list[Artifact], session: ProviderSession
-    ) -> None:
-        logo_setting = self._settings.logo_path
-        logo_path = Path(logo_setting) if logo_setting else session.paths.assets_dir / "logo.png"
-        if not logo_path.is_file():
-            return
-        for artifact in artifacts:
-            if artifact.rel_path is None:
-                continue
-            image_path = session.paths.outputs_dir / artifact.rel_path
-            try:
-                await asyncio.to_thread(logo_overlay.overlay_logo_in_place, image_path, logo_path)
-            except logo_overlay.LogoOverlayError:
-                # Cosmetic step; never fail an otherwise-successful generation.
-                continue
+

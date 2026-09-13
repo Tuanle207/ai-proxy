@@ -9,11 +9,15 @@ from pathlib import Path
 
 from PIL import Image
 
-_FORMAT_TO_CONTENT_TYPE = {
+_FORMAT_TO_CONTENT_TYPE: dict[str, str] = {
     "JPEG": "image/jpeg",
     "PNG": "image/png",
     "WEBP": "image/webp",
     "GIF": "image/gif",
+    "MP4": "video/mp4",
+    "WEBM": "video/webm",
+    "AVI": "video/x-msvideo",
+    "MOV": "video/quicktime",
 }
 
 

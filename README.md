@@ -63,7 +63,9 @@ The API key is **always required** in `X-API-Key` (except `/healthz`): taken fro
 Settings come from `AI_PROXY_*` env vars or a YAML config file (`AI_PROXY_CONFIG_FILE`).
 Per-provider settings use `AI_PROXY_<PROVIDER>_*` (e.g. `AI_PROXY_GOOGLE_FLOW_OVERLAY_LOGO=false`).
 Key core settings: `AI_PROXY_PER_ACCOUNT_CONCURRENCY`, `AI_PROXY_MAX_CONCURRENT_BROWSERS`,
-`AI_PROXY_API_KEY`, `AI_PROXY_DB_PATH`, `AI_PROXY_DEFAULT_PROVIDER`.
+`AI_PROXY_API_KEY`, `AI_PROXY_DB_PATH`, `AI_PROXY_DEFAULT_PROVIDER`,
+`AI_PROXY_BROWSER_WINDOW_WIDTH`/`AI_PROXY_BROWSER_WINDOW_HEIGHT` (headed browser window size;
+both must be set to take effect).
 
 ## Operational constraints
 

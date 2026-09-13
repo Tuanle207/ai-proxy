@@ -20,18 +20,20 @@ from urllib.parse import urljoin
 
 from playwright.async_api import Page
 
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Artifact, TaskKind
 from ai_proxy.providers.google_flow.page import selectors as sel
 
+_log = get_logger()
 
 async def collect_image_urls(
-    page: Page, count: int, *, exclude: frozenset[str] = frozenset()
+    page: Page, count: int
 ) -> list[str]:
     thumbs = page.locator(sel.RESULT_IMAGE_THUMBNAIL)
     urls: list[str] = []
     for index in range(await thumbs.count()):
         src = await thumbs.nth(index).get_attribute("src")
-        if src and src not in exclude and src not in urls:
+        if src and src not in urls:
             urls.append(src)
         if len(urls) >= count:
             break
@@ -63,10 +65,16 @@ async def download_images(
     images: list[Artifact] = []
     for url in urls:
         absolute_url = urljoin(page.url, url)
-        response = await page.context.request.get(absolute_url)
-        content = await response.body()
-        local_path = output_dir / f"{timestamp}_{uuid.uuid4().hex}.png"
-        local_path.write_bytes(content)
+        try:
+            response = await page.context.request.get(absolute_url)
+            content = await response.body()
+            local_path = output_dir / f"{timestamp}_{uuid.uuid4().hex}.png"
+            local_path.write_bytes(content)
+        except Exception:
+            _log.exception(
+                "google_flow_image_download_failed", source_url=url, page_url=page.url
+            )
+            raise
         # Flow serves JPEG bytes regardless of the .png filename (see selectors.py); the true
         # format is sniffed again at persistence time via extract_image_metadata.
         images.append(

@@ -1,4 +1,4 @@
-"""Dependencies: container accessor, API-key guard, and middleware (§6.5, §6.9)."""
+"""Dependencies: API-key guard, request ID middleware, and CORS."""
 
 from __future__ import annotations
 
@@ -21,7 +21,12 @@ def get_container(request: Request) -> ServiceContainer:
 
 async def require_api_key(request: Request) -> None:
     container = cast(ServiceContainer, request.app.state.container)
-    provided = request.headers.get("X-API-Key", "")
+    auth = request.headers.get("Authorization", "")
+    scheme, _, credentials = auth.partition(" ")
+    if scheme.lower() != "bearer":
+        provided = ""
+    else:
+        provided = credentials
     if not secrets.compare_digest(provided, container.api_key):
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 

@@ -8,10 +8,12 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from ai_proxy.core.accounts.manager import AccountManager
 from ai_proxy.core.browser.base import BrowserBackend
 from ai_proxy.core.errors import AIProxyError
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.core.models import Account, AccountStatus
 from ai_proxy.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_proxy.providers.google_flow.page.selectors import FLOW_URL, LOGIN_REDIRECT_HOST
 
+_log = get_logger()
 
 class LoginTimeoutError(AIProxyError):
     """Raised when the user does not complete login within the allotted time."""
@@ -41,6 +43,9 @@ async def interactive_login(
             await page.close()
 
     if not logged_in:
+        _log.error(
+            "google_flow_interactive_login_timed_out", account_email=account.email, timeout=timeout
+        )
         raise LoginTimeoutError(
             f"login for {account.email} did not complete within {timeout}s"
         )
@@ -109,6 +114,12 @@ class GoogleFlowAuth:
                     )
                     return True
                 except PlaywrightTimeoutError:
+                    _log.error(
+                        "google_flow_interactive_login_timed_out",
+                        account_email=session.account.email,
+                        timeout=300.0,
+                        page_url=page.url,
+                    )
                     return False
             finally:
                 await page.close()

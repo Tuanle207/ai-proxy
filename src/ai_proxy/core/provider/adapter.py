@@ -6,7 +6,7 @@ from typing import Protocol
 
 from ai_proxy.core.models import TaskRequest, TaskResult, WorkspaceRef
 from ai_proxy.core.provider.session import ProviderSession
-from ai_proxy.core.worker.failure import FailurePolicy
+from ai_proxy.core.failure import FailurePolicy
 
 
 class ProviderAdapter(Protocol):

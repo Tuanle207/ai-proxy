@@ -20,30 +20,56 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ai_proxy.core.browser.humanize import human_delay
 from ai_proxy.core.errors import AuthError, SelectorNotFoundError
+from ai_proxy.core.logging_setup import get_logger
 from ai_proxy.providers.google_flow.page import selectors as sel
 
+_log = get_logger()
 _PROJECT_URL_MARKER = "/project/"
 
 
 async def open_flow(page: Page) -> None:
-    await page.goto(sel.FLOW_URL)
-    await human_delay()
-    if sel.LOGIN_REDIRECT_HOST in page.url:
-        raise AuthError(f"google flow session expired: redirected to {page.url!r}")
+    try:
+        await page.goto(sel.FLOW_URL)
+        await human_delay()
+        if sel.LOGIN_REDIRECT_HOST in page.url:
+            raise AuthError(f"google flow session expired: redirected to {page.url!r}")
+    except Exception:
+        _log.exception("google_flow_open_flow_failed", page_url=page.url)
+        raise
 
 
-async def ensure_project(page: Page, *, timeout: float = 20.0, reuse_latest: bool = True) -> None:
-    """Open the most recent existing project (if any and `reuse_latest`), else create one.
+async def ensure_project(
+    page: Page,
+    *,
+    timeout: float = 20.0,
+    reuse_latest: bool = True,
+    project_id: str | None = None,
+) -> None:
+    """Open an existing project or create one.
 
-    Confirms success via the resulting URL either way. Raises `SelectorNotFoundError` if we
-    can't confirm we're in a project within `timeout` seconds, instead of silently continuing
-    to a guaranteed-to-fail prompt submission.
+    Priority:
+    1. Already on a project page → return
+    2. ``project_id`` provided → navigate directly to ``/project/<project_id>``
+    3. ``reuse_latest`` → click the most recent project card on the Flow home
+    4. Otherwise → click the "new project" button
+
+    Raises ``SelectorNotFoundError`` if we can't confirm we're in a project.
     """
     if _PROJECT_URL_MARKER in page.url:
+        return
+    if project_id and await _navigate_to_project(page, project_id, timeout=timeout):
         return
     if reuse_latest and await _open_latest_project(page, timeout=timeout):
         return
     await _click_new_project(page, timeout=timeout)
+
+
+async def open_project(page: Page, project_id: str, *, timeout: float = 20.0) -> None:
+    """Open exactly ``project_id`` or fail without selecting a different project."""
+    if _PROJECT_URL_MARKER + project_id in page.url:
+        return
+    if not await _navigate_to_project(page, project_id, timeout=timeout):
+        raise SelectorNotFoundError(f"could not open Flow project {project_id!r}")
 
 
 async def create_project(page: Page, *, timeout: float = 20.0) -> str:
@@ -55,7 +81,10 @@ async def create_project(page: Page, *, timeout: float = 20.0) -> str:
 
 
 async def _click_new_project(page: Page, *, timeout: float) -> None:
-    await page.locator(sel.NEW_PROJECT_BUTTON).first.click(timeout=5000)
+    # Flow's floating controls can be overlapped by its app shell while navigation starts.
+    await page.locator(sel.NEW_PROJECT_BUTTON).first.click(
+        timeout=5000, force=True, no_wait_after=True
+    )
     try:
         await page.wait_for_url(lambda url: _PROJECT_URL_MARKER in url, timeout=timeout * 1000)
     except PlaywrightTimeoutError as exc:
@@ -90,7 +119,7 @@ async def delete_project(page: Page, project_id: str, *, timeout: float = 20.0) 
         )
 
     await page.locator(sel.HEADER_MENU_BUTTON).first.click(timeout=5000)
-    dropdown = page.locator(sel.RADIX_POPPER_DROPDOWN)
+    dropdown = page.locator(sel.CDK_OVERLAY_DROPDOWN)
     try:
         await dropdown.locator(sel.DELETE_MENU_ITEM).first.click(timeout=5000)
     except PlaywrightTimeoutError as exc:
@@ -114,7 +143,9 @@ async def delete_project(page: Page, project_id: str, *, timeout: float = 20.0) 
     try:
         await page.wait_for_url(lambda url: _PROJECT_URL_MARKER not in url, timeout=timeout * 1000)
     except PlaywrightTimeoutError as exc:
-        raise SelectorNotFoundError("did not redirect away from the project after deleting") from exc
+        raise SelectorNotFoundError(
+            "did not redirect away from the project after deleting"
+        ) from exc
     await human_delay()
 
 
@@ -129,8 +160,24 @@ async def _confirm_dialog_button(dialog: Locator) -> Locator | None:
     return None
 
 
-async def _open_latest_project(page: Page, *, timeout: float) -> bool:
+async def _navigate_to_project(page: Page, project_id: str, *, timeout: float) -> bool:
+    """Navigate directly to a known project URL. Returns whether it succeeded."""
+    project_url = f"{sel.FLOW_URL}/project/{project_id}"
+    try:
+        await page.goto(project_url, wait_until="domcontentloaded", timeout=timeout * 1000)
+        await human_delay()
+        if _PROJECT_URL_MARKER in page.url:
+            return True
+        # If redirected to login, don't retry
+        return False
+    except Exception:
+        _log.exception(
+            "google_flow_navigate_to_project_failed", project_id=project_id, page_url=page.url
+        )
+        return False
 
+
+async def _open_latest_project(page: Page, *, timeout: float) -> bool:
     """Click the first (most recent) existing project card, if any. Returns whether it worked."""
     projects = page.locator(sel.PROJECT_LINK)
     if await projects.count() == 0:
@@ -139,6 +186,7 @@ async def _open_latest_project(page: Page, *, timeout: float) -> bool:
     try:
         await page.wait_for_url(lambda url: _PROJECT_URL_MARKER in url, timeout=timeout * 1000)
     except PlaywrightTimeoutError:
+        _log.error("google_flow_open_latest_project_timed_out", page_url=page.url)
         return False
     await human_delay()
     return True

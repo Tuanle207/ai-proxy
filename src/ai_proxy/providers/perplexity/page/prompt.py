@@ -28,27 +28,31 @@ _log = get_logger()
 
 
 async def submit_prompt(page: Page, text: str, *, fresh: bool) -> None:
-    box = page.locator(sel.PROMPT_TEXTBOX)
-    await box.wait_for(state="visible")
+    try:
+        box = page.locator(sel.PROMPT_TEXTBOX)
+        await box.wait_for(state="visible")
 
-    await box.fill(text)
+        await box.fill(text)
 
-    editor_text = await box.inner_text()
-    if not editor_text.strip():
-        raise RuntimeError("Native OS clipboard paste produced no visible composer text.")
+        editor_text = await box.inner_text()
+        if not editor_text.strip():
+            raise RuntimeError("Native OS clipboard paste produced no visible composer text.")
 
-    if fresh:
-        await box.press("Enter")
-        _log.info("perplexity_submit_prompt_enter")
-        return
+        if fresh:
+            await box.press("Enter")
+            _log.info("perplexity_submit_prompt_enter")
+            return
 
-    submit = page.locator(sel.SUBMIT_BUTTON)
-    await submit.wait_for(state="visible")
+        submit = page.locator(sel.SUBMIT_BUTTON)
+        await submit.wait_for(state="visible")
 
-    if not await submit.is_enabled():
-        raise RuntimeError(
-            "Perplexity composer has visible pasted text but Submit is disabled."
-        )
+        if not await submit.is_enabled():
+            raise RuntimeError(
+                "Perplexity composer has visible pasted text but Submit is disabled."
+            )
 
-    await submit.click()
-    _log.info("perplexity_submit_prompt_clicked")
+        await submit.click()
+        _log.info("perplexity_submit_prompt_clicked")
+    except Exception:
+        _log.exception("perplexity_submit_prompt_failed", fresh=fresh, prompt_chars=len(text))
+        raise

@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ai_proxy.core.paths import DataPaths
-from ai_proxy.providers.google_flow.adapter import GoogleFlowAdapter
-from ai_proxy.providers.google_flow.params import GoogleFlowParams
+from ai_web_provider.core.paths import DataPaths
+from ai_web_provider.providers.google_flow.adapter import GoogleFlowAdapter
+from ai_web_provider.providers.google_flow.params import GoogleFlowParams
 
 
 def test_default_project_lookup_is_case_insensitive(tmp_path: Path) -> None:

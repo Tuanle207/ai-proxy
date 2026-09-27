@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from ai_proxy.providers.perplexity.page import prompt as prompt_module
-from ai_proxy.providers.perplexity.page import selectors as sel
+from ai_web_provider.providers.perplexity.page import prompt as prompt_module
+from ai_web_provider.providers.perplexity.page import selectors as sel
 
 
 class _FakeElement:

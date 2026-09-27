@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from ai_proxy.core.errors import AuthError, SelectorNotFoundError
-from ai_proxy.providers.google_flow.page import navigate as navigate_module
-from ai_proxy.providers.google_flow.page.selectors import FLOW_URL
+from ai_web_provider.core.errors import AuthError, SelectorNotFoundError
+from ai_web_provider.providers.google_flow.page import navigate as navigate_module
+from ai_web_provider.providers.google_flow.page.selectors import FLOW_URL
 
 
 class _FakePage:

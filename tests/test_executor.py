@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_proxy.core.errors import SelectorNotFoundError
-from ai_proxy.core.models import Account, TaskKind, TaskRequest, TaskResult
-from ai_proxy.runtime.executor import ProviderExecutor
+from ai_web_provider.core.errors import SelectorNotFoundError
+from ai_web_provider.core.models import Account, TaskKind, TaskRequest, TaskResult
+from ai_web_provider.runtime.executor import ProviderExecutor
 
 
 class _Slot:

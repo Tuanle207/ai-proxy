@@ -13,8 +13,8 @@ from typing import Any
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_proxy.providers.perplexity.page import params as params_module
-from ai_proxy.providers.perplexity.page import selectors as sel
+from ai_web_provider.providers.perplexity.page import params as params_module
+from ai_web_provider.providers.perplexity.page import selectors as sel
 
 
 class _FakeModelButton:

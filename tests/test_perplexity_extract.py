@@ -12,9 +12,9 @@ from typing import Any
 import pytest
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_proxy.providers.perplexity.errors import PerplexityError
-from ai_proxy.providers.perplexity.page import extract as extract_module
-from ai_proxy.providers.perplexity.page import selectors as sel
+from ai_web_provider.providers.perplexity.errors import PerplexityError
+from ai_web_provider.providers.perplexity.page import extract as extract_module
+from ai_web_provider.providers.perplexity.page import selectors as sel
 
 
 class FakeCopyButton:

@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ai_proxy.core.browser.humanize import human_type, paste_text
+from ai_web_provider.core.browser.humanize import human_type, paste_text
 
 
 class _FakeLocator:

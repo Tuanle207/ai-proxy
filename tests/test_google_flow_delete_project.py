@@ -15,9 +15,9 @@ from typing import Any, Callable
 import pytest
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_proxy.core.errors import SelectorNotFoundError
-from ai_proxy.providers.google_flow.page import navigate as navigate_module
-from ai_proxy.providers.google_flow.page import selectors as sel
+from ai_web_provider.core.errors import SelectorNotFoundError
+from ai_web_provider.providers.google_flow.page import navigate as navigate_module
+from ai_web_provider.providers.google_flow.page import selectors as sel
 
 _PROJECT_ID = "abc123"
 _PROJECT_URL = f"https://labs.google/fx/tools/flow/project/{_PROJECT_ID}"

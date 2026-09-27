@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_proxy.core.provider import registry
+from ai_web_provider.core.provider import registry
 
 
 @pytest.fixture(autouse=True)

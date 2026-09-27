@@ -6,11 +6,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ai_proxy.core.accounts.manager import AccountManager
-from ai_proxy.core.models import AccountStatus
-from ai_proxy.core.paths import DataPaths
-from ai_proxy.core.rotation.pool import AccountSlotPool
-from ai_proxy.core.rotation.strategy import RoundRobinStrategy
+from ai_web_provider.core.accounts.manager import AccountManager
+from ai_web_provider.core.models import AccountStatus
+from ai_web_provider.core.paths import DataPaths
+from ai_web_provider.core.rotation.pool import AccountSlotPool
+from ai_web_provider.core.rotation.strategy import RoundRobinStrategy
 
 
 def _pool(tmp_path: Path, *emails: str) -> AccountSlotPool:

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from ai_proxy.core.browser.camoufox_backend import CamoufoxBackend
-from ai_proxy.core.paths import DataPaths
+from ai_web_provider.core.browser.camoufox_backend import CamoufoxBackend
+from ai_web_provider.core.paths import DataPaths
 
 
 def _backend(tmp_path: Path, *, max_tabs: int) -> CamoufoxBackend:

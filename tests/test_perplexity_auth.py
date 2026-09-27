@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from ai_proxy.core.errors import GenerationTimeoutError
-from ai_proxy.providers.perplexity import auth as auth_module
-from ai_proxy.providers.perplexity.page import selectors as sel
-from ai_proxy.providers.perplexity.page import wait as wait_module
+from ai_web_provider.core.errors import GenerationTimeoutError
+from ai_web_provider.providers.perplexity import auth as auth_module
+from ai_web_provider.providers.perplexity.page import selectors as sel
+from ai_web_provider.providers.perplexity.page import wait as wait_module
 
 
 class FakeLocator:

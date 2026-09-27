@@ -13,8 +13,8 @@ from typing import Any
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_proxy.providers.google_flow.page import params as params_module
-from ai_proxy.providers.google_flow.page import selectors as sel
+from ai_web_provider.providers.google_flow.page import params as params_module
+from ai_web_provider.providers.google_flow.page import selectors as sel
 
 
 class _FakeClickable:

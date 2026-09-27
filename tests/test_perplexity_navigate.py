@@ -7,7 +7,7 @@ from typing import Any
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_proxy.providers.perplexity.page import navigate as navigate_module
+from ai_web_provider.providers.perplexity.page import navigate as navigate_module
 
 
 class _FakeResponse:

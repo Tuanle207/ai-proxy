@@ -34,12 +34,12 @@ def names() -> list[str]:
 def discover() -> None:
     """Import built-ins and load third-party providers via the ``ai_web_provider.providers`` entry point.
 
-    Built-ins live under `ai_proxy.providers.*` and self-register on import; third-party providers
+    Built-ins live under `ai_web_provider.providers.*` and self-register on import; third-party providers
     ship as separate distributions exposing the entry-point group.
     """
     import importlib.metadata
 
-    import ai_proxy.providers  # noqa: F401  built-ins self-register on import
+    import ai_web_provider.providers  # noqa: F401  built-ins self-register on import
 
     eps = importlib.metadata.entry_points()
     for ep in eps.select(group=_ENTRY_POINT_GROUP):

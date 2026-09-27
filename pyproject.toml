@@ -50,5 +50,5 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = "ai_proxy.core.browser.camoufox_backend"
+module = "ai_web_provider.core.browser.camoufox_backend"
 disallow_untyped_calls = false

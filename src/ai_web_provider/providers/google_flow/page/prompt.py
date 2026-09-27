@@ -79,8 +79,8 @@ async def submit_prompt(
         await attach_reference_images(
             page, reference_images or [], cache, account_email, workspace_ref
         )
-        await page.locator(sel.PROMPT_TEXTBOX).first.fill(prompt)
-        await page.locator(sel.SUBMIT_BUTTON).last.click()
+        await page.locator(sel.PROMPT_TEXTBOX).first.fill(prompt, force=True)
+        await page.locator(sel.SUBMIT_BUTTON).last.click(force=True)
         _log.info(
             "google_flow_submit_prompt_succeeded",
             workspace_ref=workspace_ref,

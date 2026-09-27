@@ -5,7 +5,7 @@ from __future__ import annotations
 from ai_proxy.core.errors import AIProxyError
 from ai_proxy.core.provider.spec import ProviderSpec
 
-_ENTRY_POINT_GROUP = "ai_proxy.providers"
+_ENTRY_POINT_GROUP = "ai_web_provider.providers"
 
 _REGISTRY: dict[str, ProviderSpec] = {}
 
@@ -32,7 +32,7 @@ def names() -> list[str]:
 
 
 def discover() -> None:
-    """Import built-ins and load third-party providers via the ``ai_proxy.providers`` entry point.
+    """Import built-ins and load third-party providers via the ``ai_web_provider.providers`` entry point.
 
     Built-ins live under `ai_proxy.providers.*` and self-register on import; third-party providers
     ship as separate distributions exposing the entry-point group.

@@ -79,6 +79,7 @@ class GoogleFlowAdapter:
         start = time.monotonic()
         run_started_at = datetime.now().strftime("%y%m%d%H%M%S")
         workspace_ref: WorkspaceRef | None = None
+        existing_image_urls: frozenset[str] = frozenset()
 
         _log.info(
             "google_flow_execute_start",
@@ -98,6 +99,7 @@ class GoogleFlowAdapter:
                 await navigate.open_project(page, default_project_id)
                 workspace_ref = default_project_id
                 step = "collect_existing_image_urls"
+                existing_image_urls = await download.collect_existing_image_urls(page)
             else:
                 await navigate.open_flow(page)
                 step = "create_project"
@@ -150,7 +152,7 @@ class GoogleFlowAdapter:
             raise
         try:
             step = "collect_image_urls"
-            urls = await download.collect_image_urls(page, effective_count)
+            urls = await download.collect_image_urls(page, effective_count, exclude=existing_image_urls)
             step = "download_images"
             artifacts = await download.download_images(
                 page, urls, session.output_dir, timestamp=run_started_at
@@ -216,5 +218,4 @@ class GoogleFlowAdapter:
             artifact.sha256 = meta.sha256
             artifact.mime = meta.content_type
             artifact.rel_path = local_path.relative_to(session.paths.outputs_dir)
-
 

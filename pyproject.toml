@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-proxy"
+name = "ai-web-provider"
 version = "0.3.0.dev0"
-description = "Multi-provider automation proxy around web AI apps."
+description = "In-process browser automation runtime for AI web providers."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -17,8 +17,6 @@ dependencies = [
     "pillow>=10.3",
     "camoufox[geoip]>=0.4",
     "playwright>=1.44",
-    "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
     "httpx>=0.27",
 ]
 
@@ -35,15 +33,8 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 required_plugins = ["pytest-asyncio"]
-markers = [
-    "real_api: marks tests that hit a running aip serve instance (requires AI_PROXY_BASE_URL and AI_PROXY_API_KEY env vars)",
-]
-
-[project.scripts]
-ai-proxy-api = "ai_proxy.core.service.app:run"
-
 [tool.hatch.build.targets.wheel]
-packages = ["src/ai_proxy"]
+packages = ["src/ai_proxy", "src/ai_web_provider"]
 
 [tool.ruff]
 line-length = 100

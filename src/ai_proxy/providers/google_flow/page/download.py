@@ -27,16 +27,18 @@ from ai_proxy.providers.google_flow.page import selectors as sel
 _log = get_logger()
 
 async def collect_image_urls(
-    page: Page, count: int
+    page: Page, count: int, *, exclude: frozenset[str] = frozenset()
 ) -> list[str]:
     thumbs = page.locator(sel.RESULT_IMAGE_THUMBNAIL)
     urls: list[str] = []
     for index in range(await thumbs.count()):
         src = await thumbs.nth(index).get_attribute("src")
-        if src and src not in urls:
+        if src and src not in exclude and src not in urls:
             urls.append(src)
         if len(urls) >= count:
             break
+    if len(urls) != count:
+        raise RuntimeError(f"Google Flow returned {len(urls)} new image(s), expected {count}")
     return urls
 
 

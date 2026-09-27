@@ -1,23 +1,4 @@
 """Type the prompt (humanized), optionally attach reference images, and submit.
-
-Verified 2026-08-14: the prompt box is a Slate.js rich-text editor. Typing via
-`press_sequentially` without first explicitly clicking/focusing the box leaves Slate's
-internal selection state unset — the DOM text looks correct but the submit button stays
-`aria-disabled` forever. An explicit `.click()` before typing fixes this.
-
-Verified 2026-08-15: once a (reused) project already has prior agent messages, `SUBMIT_BUTTON`
-(`button:has-text('arrow_forward')`) matches *two* elements — an unrelated "show thinking
-process" chat-log toggle (DOM order: first) and the real submit/Create button (DOM order:
-last), both apparently rendering the same icon glyph as text. `.last` reliably picks the real
-submit button.
-
-`paste_text` (execCommand insertText) was tried here 2026-08-18 alongside the same change in
-Perplexity's prompt.py, then reverted proactively (Perplexity's own e2e run showed it left the
-submit control permanently disabled on a resumed thread). Independently e2e-verified here too on
-2026-08-18: on a fresh project, `paste_text` inserts a raw text node alongside Slate's own
-placeholder (Slate's internal editor state never sees the change, since `execCommand` bypasses
-its controlled update path) and `SUBMIT_BUTTON` never enables. Do not use `paste_text` here at
-all, fresh or resumed — `human_type` is the only mechanism proven to work with this editor.
 """
 
 from __future__ import annotations
@@ -27,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from playwright.async_api import Page
 
-from ai_web_provider.core.browser.humanize import human_delay, human_type
+from ai_web_provider.core.browser.humanize import human_delay
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.providers.google_flow.page import selectors as sel
 
@@ -79,6 +60,7 @@ async def submit_prompt(
         await attach_reference_images(
             page, reference_images or [], cache, account_email, workspace_ref
         )
+        await page.locator(sel.PROMPT_TEXTBOX).wait_for(state="visible", timeout=5000)
         await page.locator(sel.PROMPT_TEXTBOX).first.fill(prompt, force=True)
         await page.locator(sel.SUBMIT_BUTTON).last.click(force=True)
         _log.info(

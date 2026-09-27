@@ -15,6 +15,7 @@ import re
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from ai_web_provider.core.browser.humanize import human_delay
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.providers.google_flow.page import selectors as sel
 
@@ -105,4 +106,5 @@ async def set_count(page: Page, count: int) -> None:
 async def _save_and_close(page: Page) -> None:
     """Click the "Lưu"/"Save" button; fall back to Escape if it can't be found."""
     await page.locator('.save-container button').first.click(timeout=5000, force=True)
+    await human_delay()
 

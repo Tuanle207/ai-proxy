@@ -69,7 +69,7 @@ class ProviderRuntimeContainer:
             options: dict[str, Any] = {
                 "headless": self.settings.headless,
                 "humanize": True,
-                "block_images": True,
+                "block_images": False,
             }
             if self.settings.browser_window_width and self.settings.browser_window_height:
                 options["window"] = (

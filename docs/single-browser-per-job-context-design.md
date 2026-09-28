@@ -193,6 +193,8 @@ download after the output URL is found. If image blocking prevents those
 explicit downloads, use a dedicated artifact-download path rather than
 disabling image blocking or keeping contexts alive.
 
+-> Since blocking image can cause bot detection. Disabled for now
+
 ## Proxy and GeoIP Decision
 
 Per-account proxy and GeoIP behavior are out of scope. The current launch

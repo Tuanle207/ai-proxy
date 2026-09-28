@@ -40,13 +40,6 @@ class GoogleFlowAdapter:
         self._cache = ReferenceCache(
             deps.paths.provider_dir("google_flow") / "reference_cache.json"
         )
-        required_projects = self._settings.per_account_concurrency or 1
-        for email, projects in self._settings.projects_by_account.items():
-            if len(projects) < required_projects:
-                raise ValueError(
-                    f"Google Flow account {email!r} has {len(projects)} project(s), but requires "
-                    f"{required_projects} for its configured concurrency."
-                )
         self._projects = GoogleFlowProjectPool(self._settings.projects_by_account)
 
     @property

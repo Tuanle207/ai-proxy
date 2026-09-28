@@ -39,11 +39,19 @@ class ProviderRuntimeContainer:
             provider_settings = spec.settings_model(**self.settings.provider_settings(name))
             accounts = AccountManager(self.paths, name)
             backend = CamoufoxBackend(self.paths, name)
+            per_account_limit = self.settings.per_account_concurrency
+            per_account_limits = None
+            if name == "google_flow":
+                projects_by_account = getattr(provider_settings, "projects_by_account", {})
+                per_account_limits = {
+                    email: min(per_account_limit, len(projects))
+                    for email, projects in projects_by_account.items()
+                }
             pool = AccountSlotPool(
                 accounts,
                 RoundRobinStrategy(),
-                per_account_limit=getattr(provider_settings, "per_account_concurrency", None)
-                or self.settings.per_account_concurrency,
+                per_account_limit=per_account_limit,
+                per_account_limits=per_account_limits,
                 max_concurrent_jobs=self.settings.max_concurrent_jobs,
                 global_semaphore=global_semaphore,
             )

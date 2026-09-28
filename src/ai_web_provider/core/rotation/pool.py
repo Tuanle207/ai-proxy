@@ -8,6 +8,7 @@ and it always lands on an account that has a free slot.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ai_web_provider.core.accounts.manager import AccountManager
@@ -46,12 +47,16 @@ class AccountSlotPool:
         strategy: RotationStrategy,
         *,
         per_account_limit: int,
+        per_account_limits: Mapping[str, int] | None = None,
         max_concurrent_jobs: int,
         global_semaphore: asyncio.Semaphore | None = None,
     ):
         self._accounts = accounts
         self._strategy = strategy
         self._per_account_limit = per_account_limit
+        self._per_account_limits = {
+            email.strip().lower(): limit for email, limit in (per_account_limits or {}).items()
+        }
         self._max_concurrent_jobs = max_concurrent_jobs
         self._global = global_semaphore
         self._in_flight: dict[str, int] = {}
@@ -146,7 +151,7 @@ class AccountSlotPool:
         available = [
             account
             for account in self._accounts.get_available()
-            if self._in_flight.get(account.email, 0) < self._per_account_limit
+            if self._in_flight.get(account.email, 0) < self._limit_for(account.email)
         ]
         if not available:
             return None
@@ -158,6 +163,11 @@ class AccountSlotPool:
         if not candidates:
             return None
         return self._strategy.select(candidates)
+
+    def _limit_for(self, email: str) -> int:
+        if self._per_account_limits:
+            return self._per_account_limits.get(email.strip().lower(), 0)
+        return self._per_account_limit
 
     def snapshot(self) -> PoolStats:
         return PoolStats(

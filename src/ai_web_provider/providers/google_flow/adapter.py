@@ -192,7 +192,7 @@ class GoogleFlowAdapter:
         if session.page is not None:
             await navigate.open_flow(session.page)
             return LOGIN_REDIRECT_HOST not in session.page.url
-        async with self._deps.backend.browser_context(session.account, headless=True) as context:
+        async with self._deps.backend.browser_context(session.account) as context:
             page = await context.new_page()
             try:
                 await navigate.open_flow(page)

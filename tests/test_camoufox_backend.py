@@ -1,52 +1,106 @@
-"""`CamoufoxBackend` warm-session claim tests (no real browser launched)."""
+"""`CamoufoxBackend` per-job context tests (no real browser launched)."""
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
-from types import SimpleNamespace
+
+import pytest
 
 from ai_web_provider.core.browser.camoufox_backend import CamoufoxBackend
+from ai_web_provider.core.models import Account
 from ai_web_provider.core.paths import DataPaths
 
 
-def _backend(tmp_path: Path, *, max_tabs: int) -> CamoufoxBackend:
-    return CamoufoxBackend(
-        DataPaths(tmp_path), "google_flow", idle_ttl_seconds=600.0, max_tabs_per_session=max_tabs
-    )
+class _Context:
+    def __init__(self, *, fail_persist: bool = False) -> None:
+        self.closed = False
+        self.fail_persist = fail_persist
+
+    async def storage_state(self, *, path: str) -> None:
+        if self.fail_persist:
+            raise RuntimeError("cannot persist")
+        Path(path).write_text("{}", encoding="utf-8")
+
+    async def close(self) -> None:
+        self.closed = True
 
 
-def _session(*, headless: bool = True, active_pages: int = 0) -> SimpleNamespace:
-    browser = SimpleNamespace(is_connected=lambda: True)
-    return SimpleNamespace(browser=browser, headless=headless, active_pages=active_pages)
+class _Browser:
+    def __init__(self, contexts: list[_Context]) -> None:
+        self.contexts = contexts
+
+    def is_connected(self) -> bool:
+        return True
+
+    async def new_context(self, **_: object) -> _Context:
+        context = _Context()
+        self.contexts.append(context)
+        return context
 
 
-def test_claim_session_reuses_session_with_free_tab(tmp_path: Path) -> None:
-    backend = _backend(tmp_path, max_tabs=2)
-    session = _session(active_pages=1)
-    backend._warm["a@example.com"] = [session]
-
-    assert backend._claim_session("a@example.com", headless=True) is session
-
-
-def test_claim_session_returns_none_when_tabs_saturated(tmp_path: Path) -> None:
-    backend = _backend(tmp_path, max_tabs=2)
-    backend._warm["a@example.com"] = [_session(active_pages=2)]
-
-    assert backend._claim_session("a@example.com", headless=True) is None
+def _backend(tmp_path: Path) -> tuple[CamoufoxBackend, list[_Context]]:
+    contexts: list[_Context] = []
+    backend = CamoufoxBackend(DataPaths(tmp_path), "google_flow")
+    backend.set_browser(_Browser(contexts))  # type: ignore[arg-type]
+    return backend, contexts
 
 
-def test_claim_session_skips_mismatched_headless(tmp_path: Path) -> None:
-    backend = _backend(tmp_path, max_tabs=2)
-    backend._warm["a@example.com"] = [_session(headless=False)]
+def test_context_is_fresh_per_job_and_closed_on_exit(tmp_path: Path) -> None:
+    async def run() -> None:
+        backend, contexts = _backend(tmp_path)
+        account = Account(email="a@example.com")
 
-    assert backend._claim_session("a@example.com", headless=True) is None
+        async with backend.browser_context(account) as first:
+            assert first is contexts[0]
+        async with backend.browser_context(account) as second:
+            assert second is contexts[1]
+
+        assert first is not second
+        assert all(context.closed for context in contexts)
+        assert backend._active_contexts == set()
+        assert backend._paths.storage_state_file("google_flow", account.email).is_file()
+
+    asyncio.run(run())
 
 
-def test_claim_session_drops_disconnected_sessions(tmp_path: Path) -> None:
-    backend = _backend(tmp_path, max_tabs=1)
-    dead = _session(active_pages=0)
-    dead.browser = SimpleNamespace(is_connected=lambda: False)
-    backend._warm["a@example.com"] = [dead]
+def test_context_closes_when_persistence_fails(tmp_path: Path) -> None:
+    async def run() -> None:
+        backend, _ = _backend(tmp_path)
+        context = _Context(fail_persist=True)
 
-    assert backend._claim_session("a@example.com", headless=True) is None
-    assert backend._warm["a@example.com"] == []
+        class _FailingBrowser:
+            def is_connected(self) -> bool:
+                return True
+
+            async def new_context(self, **_: object) -> _Context:
+                return context
+
+        backend.set_browser(_FailingBrowser())  # type: ignore[arg-type]
+        with pytest.raises(RuntimeError, match="cannot persist"):
+            async with backend.browser_context(Account(email="a@example.com")):
+                pass
+        assert context.closed
+        assert backend._active_contexts == set()
+
+    asyncio.run(run())
+
+
+def test_context_requires_started_browser(tmp_path: Path) -> None:
+    async def run() -> None:
+        backend = CamoufoxBackend(DataPaths(tmp_path), "google_flow")
+        with pytest.raises(RuntimeError, match="not started"):
+            async with backend.browser_context(Account(email="a@example.com")):
+                pass
+
+    asyncio.run(run())
+
+
+def test_context_rejects_account_proxy(tmp_path: Path) -> None:
+    async def run() -> None:
+        backend, _ = _backend(tmp_path)
+        with pytest.raises(RuntimeError, match="proxies are unsupported"):
+            async with backend.browser_context(Account(email="a@example.com", proxy="http://proxy")):
+                pass
+
+    asyncio.run(run())

@@ -2,7 +2,9 @@
 
 `ai-web-provider` is an in-process browser automation runtime for AI web
 providers. It owns provider discovery, account persistence and rotation,
-browser lifecycle, and provider-specific execution. It deliberately exposes no
+browser lifecycle, and provider-specific execution. One Camoufox browser runs
+for the started runtime; each task attempt uses and closes an isolated browser
+context. Image loading is blocked for browser pages. It deliberately exposes no
 HTTP server or API key configuration.
 
 The public library surface is `ai_web_provider`:
@@ -45,6 +47,11 @@ The embedding application owns configuration. `Settings` accepts provider
 settings through its `providers` mapping, such as `{"google_flow":
 {"per_account_concurrency": 1}}`. One process must own a data directory at a
 time because account state and browser sessions are persisted there.
+
+Account-specific proxies are unsupported by the shared-browser runtime.
+Interactive login requires `AI_PROXY_HEADLESS=false`; the one browser then
+remains headed for its entire lifetime, including normal jobs. When
+`AI_PROXY_HEADLESS=true`, interactive login fails before opening a page.
 
 Google Flow default-project reuse is serialized per account by default. The
 runtime must return only artifacts created by the current generation; callers

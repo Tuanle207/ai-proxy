@@ -27,7 +27,7 @@ class ProviderExecutor:
             attempted.add(slot.email)
             try:
                 account = runtime.accounts.get(slot.email)
-                async with runtime.backend.browser_context(account, headless=self._container.settings.headless) as context:
+                async with runtime.backend.browser_context(account) as context:
                     page = await context.new_page()
                     try:
                         session = ProviderSession(account, page, self._container.paths, self._container.paths.outputs_dir, runtime.settings)

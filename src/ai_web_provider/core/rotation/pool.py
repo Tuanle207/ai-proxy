@@ -1,7 +1,7 @@
 """Capacity-aware account acquisition (fixes §1.2.1).
 
 Replaces the "select an account, then block on its semaphore" behaviour of the CLI scheduler: a
-job only blocks here when *every* account is saturated or the global browser ceiling is reached,
+    job only blocks here when *every* account is saturated or the global job ceiling is reached,
 and it always lands on an account that has a free slot.
 """
 
@@ -46,13 +46,13 @@ class AccountSlotPool:
         strategy: RotationStrategy,
         *,
         per_account_limit: int,
-        max_concurrent_browsers: int,
+        max_concurrent_jobs: int,
         global_semaphore: asyncio.Semaphore | None = None,
     ):
         self._accounts = accounts
         self._strategy = strategy
         self._per_account_limit = per_account_limit
-        self._max_concurrent_browsers = max_concurrent_browsers
+        self._max_concurrent_jobs = max_concurrent_jobs
         self._global = global_semaphore
         self._in_flight: dict[str, int] = {}
         self._total_in_flight = 0
@@ -82,7 +82,7 @@ class AccountSlotPool:
                 _log.warning(
                     "account_slot_wait_no_candidate",
                     total_in_flight=self._total_in_flight,
-                    max_concurrent_browsers=self._max_concurrent_browsers,
+                    max_concurrent_jobs=self._max_concurrent_jobs,
                     excluded=sorted(exclude),
                     account_statuses={
                         a.email: a.status.value for a in self._accounts.list_accounts()
@@ -141,7 +141,7 @@ class AccountSlotPool:
         self._capacity_changed.clear()
 
     def _select_candidate(self, exclude: frozenset[str], model: str | None = None) -> Account | None:
-        if self._total_in_flight >= self._max_concurrent_browsers:
+        if self._total_in_flight >= self._max_concurrent_jobs:
             return None
         available = [
             account
@@ -161,8 +161,8 @@ class AccountSlotPool:
 
     def snapshot(self) -> PoolStats:
         return PoolStats(
-            total_slots=self._max_concurrent_browsers,
-            free_slots=max(0, self._max_concurrent_browsers - self._total_in_flight),
+            total_slots=self._max_concurrent_jobs,
+            free_slots=max(0, self._max_concurrent_jobs - self._total_in_flight),
             total_in_flight=self._total_in_flight,
             per_account_limit=self._per_account_limit,
             per_account_in_flight=dict(self._in_flight),

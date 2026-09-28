@@ -16,7 +16,6 @@ from ai_web_provider.core.paths import DataPaths
 
 _legacy_prefix = "FLOW_"
 _env_prefix = "AI_PROXY_"
-DEFAULT_PROVIDER = "google_flow"
 
 
 def _load_yaml_config() -> dict[str, Any]:
@@ -48,7 +47,7 @@ def _merge_provider_settings() -> dict[str, dict[str, Any]]:
             if isinstance(keys, dict):
                 merged[str(provider)] = dict(keys)
 
-    known = set(merged) | {DEFAULT_PROVIDER}
+    known = set(merged) | {"google_flow"}
     for var, value in os.environ.items():
         if not var.startswith(_env_prefix):
             continue
@@ -78,24 +77,14 @@ class Settings(BaseSettings):
     data_dir: str = "data"
     headless: bool = True
     per_account_concurrency: int = 2
-    default_timeout_seconds: float = 180.0
     max_retries: int = 3
-    default_output_dir: str | None = None
-    default_provider: str = DEFAULT_PROVIDER
     providers: dict[str, dict[str, Any]] = {}
 
-    api_host: str = "127.0.0.1"
-    api_port: int = 5002
-    api_key: str | None = None
-    cors_origins: list[str] = []
-    max_concurrent_browsers: int = 4
-    browser_idle_ttl_seconds: float = 600.0
+    max_concurrent_jobs: int = 4
     browser_window_width: int | None = 1280
     browser_window_height: int | None = 720
     cooldown_minutes: int = 5
     quota_cooldown_minutes: int = 120
-    log_level: str = "INFO"
-    log_format: str = "console"
 
     @model_validator(mode="after")
     def _warn_legacy_flow_env(self) -> Self:
@@ -117,8 +106,12 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        yaml_settings = lambda: _yaml_config_source(settings_cls)
-        providers_settings = lambda: _providers_source(settings_cls)
+        def yaml_settings() -> dict[str, Any]:
+            return _yaml_config_source(settings_cls)
+
+        def providers_settings() -> dict[str, dict[str, dict[str, Any]]]:
+            return _providers_source(settings_cls)
+
         return (
             init_settings,
             env_settings,

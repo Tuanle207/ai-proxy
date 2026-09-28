@@ -19,7 +19,7 @@ def _pool(tmp_path: Path, *emails: str) -> AccountSlotPool:
         accounts.add(email)
         accounts.set_status(email, AccountStatus.ACTIVE)
     return AccountSlotPool(
-        accounts, RoundRobinStrategy(), per_account_limit=2, max_concurrent_browsers=4
+        accounts, RoundRobinStrategy(), per_account_limit=2, max_concurrent_jobs=4
     )
 
 

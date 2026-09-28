@@ -19,6 +19,17 @@ class LoginTimeoutError(AIProxyError):
     """Raised when the user does not complete login within the allotted time."""
 
 
+class HeadlessLoginError(AIProxyError):
+    """Raised when interactive login is requested from a headless runtime."""
+
+
+def _require_headful_login(backend: BrowserBackend) -> None:
+    if backend.headless:
+        raise HeadlessLoginError(
+            "interactive login requires AI_PROXY_HEADLESS=false; restart the runtime"
+        )
+
+
 async def interactive_login(
     account: Account, manager: AccountManager, backend: BrowserBackend, *, timeout: float = 300.0
 ) -> Account:
@@ -28,7 +39,8 @@ async def interactive_login(
     context exit) and the account status is set to `active`. Raises `LoginTimeoutError`
     if the session is still on Google's sign-in page after `timeout` seconds.
     """
-    async with backend.browser_context(account, headless=False, reuse=False) as context:
+    _require_headful_login(backend)
+    async with backend.browser_context(account) as context:
         page = await context.new_page()
         try:
             await page.goto(FLOW_URL)
@@ -93,7 +105,7 @@ class GoogleFlowAuth:
         if session.page is not None:
             await session.page.goto(FLOW_URL, timeout=15 * 1000)
             return LOGIN_REDIRECT_HOST not in session.page.url
-        async with self._backend.browser_context(session.account, headless=True) as context:
+        async with self._backend.browser_context(session.account) as context:
             page = await context.new_page()
             try:
                 await page.goto(FLOW_URL, timeout=15 * 1000)
@@ -102,9 +114,8 @@ class GoogleFlowAuth:
                 await page.close()
 
     async def interactive_login(self, session: ProviderSession) -> bool:
-        async with self._backend.browser_context(
-            session.account, headless=False, reuse=False
-        ) as context:
+        _require_headful_login(self._backend)
+        async with self._backend.browser_context(session.account) as context:
             page = await context.new_page()
             try:
                 await page.goto(FLOW_URL)

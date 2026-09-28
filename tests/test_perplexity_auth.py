@@ -10,6 +10,7 @@ renders for authenticated users.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -85,3 +86,16 @@ def test_probe_false_off_perplexity(monkeypatch: Any) -> None:
         {sel.LOGGED_IN_BELL: FakeLocator([1])},
     )
     assert asyncio.run(auth_module.probe_logged_in(page)) is False
+
+
+def test_interactive_login_requires_headful_browser() -> None:
+    auth = auth_module.PerplexityAuth(
+        SimpleNamespace(
+            backend=SimpleNamespace(headless=True),
+            settings=SimpleNamespace(login_timeout=300.0),
+        )
+    )
+    session = SimpleNamespace(account=SimpleNamespace())
+
+    with pytest.raises(auth_module.HeadlessLoginError, match="AI_PROXY_HEADLESS=false"):
+        asyncio.run(auth.interactive_login(session))

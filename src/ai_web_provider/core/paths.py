@@ -21,10 +21,6 @@ class DataPaths:
         self.root = Path(root).expanduser().resolve()
 
     @property
-    def api_key_file(self) -> Path:
-        return self.root / "api_key"
-
-    @property
     def outputs_dir(self) -> Path:
         return self.root / "outputs"
 

@@ -114,7 +114,7 @@ class PerplexityAdapter:
         if session.page is not None:
             await navigate.open_perplexity(session.page)
             return await probe_logged_in(session.page)
-        async with self._deps.backend.browser_context(session.account, headless=True) as context:
+        async with self._deps.backend.browser_context(session.account) as context:
             page = await context.new_page()
             try:
                 await navigate.open_perplexity(page)

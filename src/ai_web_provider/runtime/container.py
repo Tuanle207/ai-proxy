@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
+
+from camoufox.async_api import AsyncCamoufox
+from playwright.async_api import Browser
 
 from ai_web_provider.core.accounts.manager import AccountManager
 from ai_web_provider.core.browser.camoufox_backend import CamoufoxBackend
@@ -23,41 +27,69 @@ class ProviderRuntimeContainer:
         self.paths = settings.paths
         registry.discover()
         self.runtimes = self._build_runtimes()
+        self._browser_cm: AsyncCamoufox | None = None
+        self._browser: Browser | None = None
+        self._lifecycle_lock = asyncio.Lock()
 
     def _build_runtimes(self) -> dict[str, ProviderRuntime]:
-        global_semaphore = asyncio.Semaphore(self.settings.max_concurrent_browsers)
+        global_semaphore = asyncio.Semaphore(self.settings.max_concurrent_jobs)
         runtimes: dict[str, ProviderRuntime] = {}
         for name in registry.names():
             spec = registry.get(name)
             provider_settings = spec.settings_model(**self.settings.provider_settings(name))
             accounts = AccountManager(self.paths, name)
-            backend = CamoufoxBackend(
-                self.paths,
-                name,
-                idle_ttl_seconds=self.settings.browser_idle_ttl_seconds,
-                max_tabs_per_session=getattr(provider_settings, "max_tabs_per_session", None) or 1,
-                window_size=(self.settings.browser_window_width, self.settings.browser_window_height)
-                if self.settings.browser_window_width and self.settings.browser_window_height
-                else None,
-            )
+            backend = CamoufoxBackend(self.paths, name)
             pool = AccountSlotPool(
                 accounts,
                 RoundRobinStrategy(),
                 per_account_limit=getattr(provider_settings, "per_account_concurrency", None)
                 or self.settings.per_account_concurrency,
-                max_concurrent_browsers=self.settings.max_concurrent_browsers,
+                max_concurrent_jobs=self.settings.max_concurrent_jobs,
                 global_semaphore=global_semaphore,
             )
             deps = ProviderRuntimeDeps(provider_settings, self.paths, backend, _log)
-            runtimes[name] = ProviderRuntime(spec, provider_settings, accounts, pool, backend, spec.build_adapter(deps), spec.build_auth(deps))
+            runtimes[name] = ProviderRuntime(
+                spec,
+                provider_settings,
+                accounts,
+                pool,
+                backend,
+                spec.build_adapter(deps),
+                spec.build_auth(deps),
+            )
         return runtimes
 
     def provider(self, name: str) -> ProviderRuntime:
         return self.runtimes[name]
 
     async def startup(self) -> None:
-        return None
+        async with self._lifecycle_lock:
+            if self._browser is not None:
+                return
+            options: dict[str, Any] = {
+                "headless": self.settings.headless,
+                "humanize": True,
+                "block_images": True,
+            }
+            if self.settings.browser_window_width and self.settings.browser_window_height:
+                options["window"] = (
+                    self.settings.browser_window_width,
+                    self.settings.browser_window_height,
+                )
+            cm = AsyncCamoufox(**options)  # type: ignore[no-untyped-call]
+            browser = cast(Browser, await cm.__aenter__())
+            self._browser_cm = cm
+            self._browser = browser
+            for runtime in self.runtimes.values():
+                runtime.backend.set_browser(browser, headless=self.settings.headless)
 
     async def shutdown(self) -> None:
-        for runtime in self.runtimes.values():
-            await runtime.backend.close_all()
+        async with self._lifecycle_lock:
+            for runtime in self.runtimes.values():
+                await runtime.backend.close_all()
+                runtime.backend.set_browser(None)
+            cm = self._browser_cm
+            self._browser = None
+            self._browser_cm = None
+            if cm is not None:
+                await cm.__aexit__(None, None, None)

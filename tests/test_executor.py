@@ -23,7 +23,7 @@ class _Pool:
     def __init__(self, slot: _Slot) -> None:
         self._slot = slot
 
-    async def try_acquire(self, **_: object) -> _Slot:
+    async def acquire(self, **_: object) -> _Slot:
         return self._slot
 
 

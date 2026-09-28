@@ -21,9 +21,7 @@ class ProviderExecutor:
         last_error: Exception | None = None
         model = request.params.get("model") if isinstance(request.params.get("model"), str) else None
         for _ in range(self._container.settings.max_retries):
-            slot = await runtime.pool.try_acquire(exclude=frozenset(attempted), model=model)
-            if slot is None:
-                break
+            slot = await runtime.pool.acquire(exclude=frozenset(attempted), model=model)
             attempted.add(slot.email)
             try:
                 account = runtime.accounts.get(slot.email)

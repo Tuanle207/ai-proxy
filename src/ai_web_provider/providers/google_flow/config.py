@@ -16,6 +16,5 @@ class GoogleFlowSettings(ProviderSettings):
     quota_cooldown_minutes: int = 120
     overlay_logo: bool = True
     model_fallback_order: list[str] = ["Nano Banana 2", "Nano Banana Pro", "Nano Banana 2 Lite"]
-    # Flow accounts share mutable Google session state, so same-account concurrency is
-    # serialized by default. Override via env if desired.
     per_account_concurrency: int | None = 1
+    projects_by_account: dict[str, list[str]] = {}

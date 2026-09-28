@@ -16,7 +16,6 @@ class GoogleFlowParams(ProviderParams):
     aspect_ratio: str | None = "16:9"
     count_hint: int = 1
     overlay_logo: bool = True
-    reuse_default_project: bool = False
 
     @field_validator("aspect_ratio")
     @classmethod

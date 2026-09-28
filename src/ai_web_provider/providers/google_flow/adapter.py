@@ -8,15 +8,13 @@ returns artifacts. Flow options travel in `GoogleFlowParams`; Flow settings in `
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from datetime import datetime
 from typing import cast
 
-from ai_web_provider.core.errors import QuotaExceededError, SelectorNotFoundError
+from ai_web_provider.core.errors import QuotaExceededError
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.core.models import Artifact, TaskRequest, TaskResult, WorkspaceRef
-from ai_web_provider.core.paths import DataPaths
 from ai_web_provider.core.provider.session import ProviderRuntimeDeps, ProviderSession
 from ai_web_provider.core.failure import FailurePolicy
 from ai_web_provider.core.metadata import extract_image_metadata
@@ -25,6 +23,7 @@ from ai_web_provider.providers.google_flow.page import download, navigate, promp
 from ai_web_provider.providers.google_flow.page import params as page_params
 from ai_web_provider.providers.google_flow.page.selectors import LOGIN_REDIRECT_HOST
 from ai_web_provider.providers.google_flow.params import GoogleFlowParams
+from ai_web_provider.providers.google_flow.project_pool import GoogleFlowProjectPool, ProjectLease
 from ai_web_provider.providers.google_flow.reference_cache import ReferenceCache
 
 _log = get_logger()
@@ -41,28 +40,14 @@ class GoogleFlowAdapter:
         self._cache = ReferenceCache(
             deps.paths.provider_dir("google_flow") / "reference_cache.json"
         )
-        self._default_projects = self._load_default_projects(deps.paths)
-
-    @staticmethod
-    def _load_default_projects(paths: DataPaths) -> dict[str, str]:
-        """Load default project IDs per account from JSON (if present)."""
-        path = paths.provider_dir("google_flow") / "default_projects.json"
-        if not path.is_file():
-            return {}
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        if not isinstance(loaded, dict) or not all(
-            isinstance(email, str) and isinstance(project_id, str)
-            for email, project_id in loaded.items()
-        ):
-            return {}
-        return {email.lower(): project_id for email, project_id in loaded.items()}
-
-    def _get_default_project(self, email: str) -> str | None:
-        """Return a known default project ID for the account, if one exists."""
-        return self._default_projects.get(email.lower())
+        required_projects = self._settings.per_account_concurrency or 1
+        for email, projects in self._settings.projects_by_account.items():
+            if len(projects) < required_projects:
+                raise ValueError(
+                    f"Google Flow account {email!r} has {len(projects)} project(s), but requires "
+                    f"{required_projects} for its configured concurrency."
+                )
+        self._projects = GoogleFlowProjectPool(self._settings.projects_by_account)
 
     @property
     def _settings(self) -> GoogleFlowSettings:
@@ -80,32 +65,21 @@ class GoogleFlowAdapter:
         run_started_at = datetime.now().strftime("%y%m%d%H%M%S")
         workspace_ref: WorkspaceRef | None = None
         existing_image_urls: frozenset[str] = frozenset()
+        lease: ProjectLease | None = None
 
         _log.info(
             "google_flow_execute_start",
             prompt_chars=len(request.prompt),
-            reuse_default_project=params.reuse_default_project,
+            account_email=session.account.email,
         )
         try:
             step = "open_flow"
-            if params.reuse_default_project:
-                step = "resolve_default_project"
-                default_project_id = self._get_default_project(session.account.email)
-                if default_project_id is None:
-                    raise SelectorNotFoundError(
-                        f"no default Google Flow project configured for {session.account.email!r}"
-                    )
-                step = "open_project"
-                await navigate.open_project(page, default_project_id)
-                workspace_ref = default_project_id
-                step = "collect_existing_image_urls"
-                existing_image_urls = await download.collect_existing_image_urls(page)
-            else:
-                await navigate.open_flow(page)
-                step = "create_project"
-                workspace_ref = await navigate.create_project(page)
-                step = "record_workspace"
-                await session.on_workspace_created(workspace_ref)
+            lease = await self._projects.acquire(session.account.email)
+            workspace_ref = lease.project_id
+            step = "open_project"
+            await navigate.open_project(page, workspace_ref)
+            step = "collect_existing_image_urls"
+            existing_image_urls = await download.collect_existing_image_urls(page)
             step = "switch_to_image_mode"
             await navigate.switch_to_image_mode(page)
             step = "configure_generation"
@@ -123,34 +97,7 @@ class GoogleFlowAdapter:
                 workspace_ref=workspace_ref,
             )
             step = "wait_for_completion"
-            await wait.wait_for_completion(
-                page,
-                timeout=request.timeout,
-            )
-        except QuotaExceededError as e:
-            e.model = params.model
-            _log.exception(
-                "google_flow_step_failed",
-                step=step,
-                workspace_ref=workspace_ref,
-                model=params.model,
-                aspect_ratio=params.aspect_ratio,
-                count=effective_count,
-                page_url=page.url,
-            )
-            raise
-        except Exception:
-            _log.exception(
-                "google_flow_step_failed",
-                step=step,
-                workspace_ref=workspace_ref,
-                model=params.model,
-                aspect_ratio=params.aspect_ratio,
-                count=effective_count,
-                page_url=page.url,
-            )
-            raise
-        try:
+            await wait.wait_for_completion(page, timeout=request.timeout)
             step = "collect_image_urls"
             urls = await download.collect_image_urls(page, effective_count, exclude=existing_image_urls)
             step = "download_images"
@@ -159,6 +106,18 @@ class GoogleFlowAdapter:
             )
             step = "finalize_metadata"
             await self._finalize_metadata(artifacts, session)
+        except QuotaExceededError as error:
+            error.model = params.model
+            _log.exception(
+                "google_flow_step_failed",
+                step=step,
+                workspace_ref=workspace_ref,
+                model=params.model,
+                aspect_ratio=params.aspect_ratio,
+                count=effective_count,
+                page_url=page.url,
+            )
+            raise
         except Exception:
             _log.exception(
                 "google_flow_step_failed",
@@ -168,6 +127,9 @@ class GoogleFlowAdapter:
                 page_url=page.url,
             )
             raise
+        finally:
+            if lease is not None:
+                await lease.release()
 
         duration = time.monotonic() - start
         _log.info(

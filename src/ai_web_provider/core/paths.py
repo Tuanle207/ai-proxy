@@ -40,6 +40,11 @@ class DataPaths:
     def providers_dir(self) -> Path:
         return self.root / "providers"
 
+    @property
+    def failures_dir(self) -> Path:
+        """Failure captures (screenshots of logged-in pages): must stay private (0700)."""
+        return self.root / "failures"
+
     def provider_dir(self, provider: str) -> Path:
         return self.providers_dir / provider
 
@@ -61,6 +66,7 @@ class DataPaths:
         _ensure_private_dir(self.outputs_dir)
         _ensure_private_dir(self.thumbnails_dir)
         _ensure_private_dir(self.uploads_dir)
+        _ensure_private_dir(self.failures_dir)
 
     def ensure_session_dir(self, provider: str, email: str) -> Path:
         return _ensure_private_dir(self.session_dir(provider, email))

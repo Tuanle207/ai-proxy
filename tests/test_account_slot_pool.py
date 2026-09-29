@@ -64,3 +64,28 @@ def test_try_acquire_returns_none_when_saturated(tmp_path: Path) -> None:
         assert await pool.try_acquire() is not None
 
     asyncio.run(main())
+
+
+def test_project_limits_cap_accounts_individually(tmp_path: Path) -> None:
+    async def main() -> None:
+        accounts = AccountManager(DataPaths(tmp_path), "google_flow")
+        for email in ("one@example.com", "two@example.com"):
+            accounts.add(email)
+            accounts.set_status(email, AccountStatus.ACTIVE)
+        pool = AccountSlotPool(
+            accounts,
+            RoundRobinStrategy(),
+            per_account_limit=2,
+            per_account_limits={"one@example.com": 1, "two@example.com": 2},
+            max_concurrent_jobs=4,
+        )
+
+        first = await pool.acquire()
+        second = await pool.acquire()
+        third = await pool.acquire()
+        slots = (first, second, third)
+        assert {slot.email for slot in slots} == {"one@example.com", "two@example.com"}
+        assert sum(slot.email == "one@example.com" for slot in slots) == 1
+        assert sum(slot.email == "two@example.com" for slot in slots) == 2
+
+    asyncio.run(main())

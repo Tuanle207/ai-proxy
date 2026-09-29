@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from typing import cast
 
+from ai_web_provider.core.diagnostics import mark_step
 from ai_web_provider.core.errors import QuotaExceededError
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.core.models import Artifact, TaskRequest, TaskResult, WorkspaceRef
@@ -66,38 +67,38 @@ class GoogleFlowAdapter:
             account_email=session.account.email,
         )
         try:
-            step = "open_flow"
+            step = mark_step("open_flow")
             lease = await self._projects.acquire(session.account.email)
             workspace_ref = lease.project_id
-            step = "open_project"
+            step = mark_step("open_project", workspace_ref=workspace_ref)
             await navigate.open_project(page, workspace_ref)
-            step = "collect_existing_image_urls"
+            step = mark_step("collect_existing_image_urls")
             existing_image_urls = await download.collect_existing_image_urls(page)
-            step = "switch_to_image_mode"
+            step = mark_step("switch_to_image_mode")
             await navigate.switch_to_image_mode(page)
-            step = "configure_generation"
+            step = mark_step("configure_generation")
             await page_params.configure_generation(
                 page,
                 model=params.model,
                 aspect_ratio=params.aspect_ratio,
                 count=effective_count,
             )
-            step = "submit_prompt"
+            step = mark_step("submit_prompt")
             await prompt.submit_prompt(
                 page, request.prompt, request.inputs,
                 cache=self._cache,
                 account_email=session.account.email,
                 workspace_ref=workspace_ref,
             )
-            step = "wait_for_completion"
+            step = mark_step("wait_for_completion")
             await wait.wait_for_completion(page, timeout=request.timeout)
-            step = "collect_image_urls"
+            step = mark_step("collect_image_urls")
             urls = await download.collect_image_urls(page, effective_count, exclude=existing_image_urls)
-            step = "download_images"
+            step = mark_step("download_images")
             artifacts = await download.download_images(
                 page, urls, session.output_dir, timestamp=run_started_at
             )
-            step = "finalize_metadata"
+            step = mark_step("finalize_metadata")
             await self._finalize_metadata(artifacts, session)
         except QuotaExceededError as error:
             error.model = params.model

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai_web_provider.core.models import AttemptRecord
+
 
 class AIProxyError(Exception):
     """Base class for all ai_proxy errors."""
@@ -37,3 +42,31 @@ class QuotaExceededError(AIProxyError):
 
 class SelectorNotFoundError(AIProxyError):
     """Raised when an expected page element cannot be located (likely a UI change)."""
+
+
+class TaskFailedError(AIProxyError):
+    """Raised by the executor once a task has failed on every attempt.
+
+    Wraps the last attempt's exception (`last_error`, also chained as `__cause__`) and carries
+    the per-attempt history so callers can surface `request_id` / `capture_id`s for tracing.
+    """
+
+    def __init__(
+        self,
+        *,
+        request_id: str,
+        attempts: list[AttemptRecord],
+        last_error: BaseException,
+    ):
+        super().__init__(str(last_error))
+        self.request_id = request_id
+        self.attempts = attempts
+        self.last_error = last_error
+
+    @property
+    def error_code(self) -> str | None:
+        return self.attempts[-1].error_code if self.attempts else None
+
+    @property
+    def capture_ids(self) -> list[str]:
+        return [a.capture_id for a in self.attempts if a.capture_id]

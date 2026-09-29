@@ -75,6 +75,9 @@ class TaskRequest(BaseModel):
     timeout: float = 180.0
     params: dict[str, Any] = Field(default_factory=dict)
     workspace_ref: str | None = None
+    # Correlation id supplied by the caller (e.g. the gateway's X-Request-ID); the executor
+    # generates one when absent. Bound into every log line and failure capture of the task.
+    request_id: str | None = None
 
     @field_validator("prompt")
     @classmethod
@@ -97,6 +100,19 @@ class Artifact(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class AttemptRecord(BaseModel):
+    """Outcome of one executor attempt (one account/browser context)."""
+
+    attempt: int
+    account_email: str
+    ok: bool
+    step: str | None = None
+    error_code: str | None = None
+    error_type: str | None = None
+    capture_id: str | None = None
+    duration_seconds: float = 0.0
+
+
 class TaskResult(BaseModel):
     request: TaskRequest
     account_email: str
@@ -104,3 +120,4 @@ class TaskResult(BaseModel):
     duration_seconds: float = 0.0
     workspace_ref: str | None = None
     provider_state: dict[str, Any] = Field(default_factory=dict)
+    attempts: list[AttemptRecord] = Field(default_factory=list)

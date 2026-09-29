@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     browser_window_height: int | None = 720
     cooldown_minutes: int = 5
     quota_cooldown_minutes: int = 120
+    # Failure captures are always written on failed attempts; these only bound disk usage.
+    failure_retention_days: int = 7
+    failure_retention_max_mb: int = 500
 
     @model_validator(mode="after")
     def _warn_legacy_flow_env(self) -> Self:

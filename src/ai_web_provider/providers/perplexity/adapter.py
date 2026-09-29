@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from typing import cast
 
+from ai_web_provider.core.diagnostics import mark_step
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.core.models import Artifact, TaskKind, TaskRequest, TaskResult, WorkspaceRef
 from ai_web_provider.core.provider.session import ProviderRuntimeDeps, ProviderSession
@@ -50,29 +51,29 @@ class PerplexityAdapter:
         start = time.monotonic()
         fresh = request.workspace_ref is None
         try:
-            step = "open_thread"
+            step = mark_step("open_thread", workspace_ref=request.workspace_ref)
             await navigate.open_thread(page, request.workspace_ref)
-            step = "count_answers"
+            step = mark_step("count_answers")
             baseline_count = await wait.count_answers(page)
-            step = "last_answer_text"
+            step = mark_step("last_answer_text")
             baseline_text = await wait.last_answer_text(page)
-            step = "set_model"
+            step = mark_step("set_model")
             await params.set_model(page, parsed.model)
-            step = "submit_prompt"
+            step = mark_step("submit_prompt")
             await prompt.submit_prompt(page, request.prompt, fresh=fresh)
-            step = "wait_for_answer"
+            step = mark_step("wait_for_answer")
             await wait.wait_for_answer(
                 page,
                 timeout=request.timeout,
                 baseline_count=baseline_count,
                 baseline_text=baseline_text,
             )
-            step = "extract_answer"
+            step = mark_step("extract_answer")
             answer = await extract.extract_answer(page)
-            step = "extract_thread_ref"
+            step = mark_step("extract_thread_ref")
             workspace_ref = await extract.extract_thread_ref(page)
             if workspace_ref is not None:
-                step = "record_workspace"
+                step = mark_step("record_workspace")
                 await session.on_workspace_created(workspace_ref)
         except Exception:
             _log.exception(

@@ -1,6 +1,7 @@
 """ProviderSession and ProviderRuntimeDeps: the dependency envelope handed to an adapter."""
 
 from __future__ import annotations
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,10 @@ from ai_web_provider.core.paths import DataPaths
 WorkspaceCreated = Callable[[WorkspaceRef], Awaitable[None]]
 
 
+async def _noop_workspace_created(_: WorkspaceRef) -> None:
+    return None
+
+
 @dataclass
 class ProviderSession:
     account: Account
@@ -23,7 +28,7 @@ class ProviderSession:
     paths: DataPaths
     output_dir: Path
     settings: ProviderSettings
-    on_workspace_created: WorkspaceCreated = lambda _: None  # no-op default
+    on_workspace_created: WorkspaceCreated = _noop_workspace_created
 
 
 @dataclass

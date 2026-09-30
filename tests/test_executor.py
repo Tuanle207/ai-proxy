@@ -61,6 +61,9 @@ class _Page:
     async def close(self) -> None:
         self.closed = True
 
+    async def set_viewport_size(self, _: dict[str, int]) -> None:
+        return None
+
 
 class _Context:
     def __init__(self, page: _Page) -> None:
@@ -134,7 +137,7 @@ def _executor(tmp_path: Path, *errors: Exception, max_retries: int = 1, broken_p
     )
     settings = SimpleNamespace(
         max_retries=max_retries,
-        headless=True,
+        browser=SimpleNamespace(viewport_width=1280, viewport_height=720),
         cooldown_minutes=5,
         quota_cooldown_minutes=120,
         failure_retention_days=7,

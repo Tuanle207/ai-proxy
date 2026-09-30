@@ -1,1 +1,1 @@
-"""Browser automation layer (Camoufox-backed)."""
+"""Browser automation layer backed by ungoogled-chromium."""

@@ -11,9 +11,8 @@ Submission is thread-state dependent (observed live, headed, 2026-08-18): a fres
 composer renders no submit button at all — a bare Enter submits — while an existing thread's
 composer exposes `button[aria-label="Submit"]`, and clicking it stays the primary path.
 
-Camoufox is Firefox-based, so Chromium's `clipboard-read`/`clipboard-write` permission grants and
-`navigator.clipboard.writeText()` are not dependable; the OS clipboard (via `pyperclip`) plus a
-real Ctrl/Cmd+V go through the normal editor paste path instead. See
+ The OS clipboard (via `pyperclip`) plus a real Ctrl/Cmd+V go through the normal editor paste path
+ instead of depending on browser clipboard permissions. See
 https://github.com/microsoft/playwright/issues/13037.
 """
 

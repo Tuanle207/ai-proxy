@@ -9,25 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import cast
 
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_web_provider.core.errors import AIProxyError
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.core.provider.session import ProviderRuntimeDeps, ProviderSession
-from ai_web_provider.providers.perplexity.config import PerplexitySettings
 from ai_web_provider.providers.perplexity.page import selectors as sel
 
 _log = get_logger()
 _NETWORK_IDLE_TIMEOUT_MS = 10_000
 _SETTLE_TIMEOUT_SECONDS = 5.0
 _SETTLE_POLL_SECONDS = 0.5
-
-
-class HeadlessLoginError(AIProxyError):
-    """Raised when interactive login is requested from a headless runtime."""
 
 
 async def probe_logged_in(page: Page) -> bool:
@@ -61,7 +54,6 @@ class PerplexityAuth:
 
     def __init__(self, deps: ProviderRuntimeDeps):
         self._deps = deps
-        self._settings = cast(PerplexitySettings, deps.settings)
 
     @property
     def login_url(self) -> str:
@@ -80,26 +72,10 @@ class PerplexityAuth:
                 await page.close()
 
     async def interactive_login(self, session: ProviderSession) -> bool:
-        if self._deps.backend.headless:
-            raise HeadlessLoginError(
-                "interactive login requires AI_PROXY_HEADLESS=false; restart the runtime"
-            )
-        timeout = self._settings.login_timeout
-        async with self._deps.backend.browser_context(session.account) as context:
-            page = await context.new_page()
-            try:
-                await page.goto(sel.PERPLEXITY_URL, wait_until="domcontentloaded")
-                return await self._wait_logged_in(page, timeout)
-            finally:
-                await page.close()
+        return await self._deps.backend.interactive_login(
+            session.account, sel.PERPLEXITY_URL, probe_logged_in
+        )
 
     async def probe_session(self, session: ProviderSession) -> bool:
         return await self.is_logged_in(session)
 
-    async def _wait_logged_in(self, page: Page, timeout: float) -> bool:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if await probe_logged_in(page):
-                return True
-            await asyncio.sleep(0.5)
-        return False

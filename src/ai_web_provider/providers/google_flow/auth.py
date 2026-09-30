@@ -1,75 +1,20 @@
-"""Flow-specific authentication: interactive login, session checks, and re-login."""
+"""Flow-specific authentication probes and headed Chromium login."""
 
 from __future__ import annotations
 
-from playwright.async_api import BrowserContext
+import asyncio
+import time
+
+from playwright.async_api import BrowserContext, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from ai_web_provider.core.accounts.manager import AccountManager
-from ai_web_provider.core.browser.base import BrowserBackend
-from ai_web_provider.core.errors import AIProxyError
-from ai_web_provider.core.logging_setup import get_logger
-from ai_web_provider.core.models import Account, AccountStatus
 from ai_web_provider.core.provider.session import ProviderRuntimeDeps, ProviderSession
+from ai_web_provider.providers.google_flow.page import selectors as sel
 from ai_web_provider.providers.google_flow.page.selectors import FLOW_URL, LOGIN_REDIRECT_HOST
 
-_log = get_logger()
-
-class LoginTimeoutError(AIProxyError):
-    """Raised when the user does not complete login within the allotted time."""
-
-
-class HeadlessLoginError(AIProxyError):
-    """Raised when interactive login is requested from a headless runtime."""
-
-
-def _require_headful_login(backend: BrowserBackend) -> None:
-    if backend.headless:
-        raise HeadlessLoginError(
-            "interactive login requires AI_PROXY_HEADLESS=false; restart the runtime"
-        )
-
-
-async def interactive_login(
-    account: Account, manager: AccountManager, backend: BrowserBackend, *, timeout: float = 300.0
-) -> Account:
-    """Open a headed browser at Flow and wait for the user to finish Google login.
-
-    On success, the browser context's storage state is persisted (by the backend, on
-    context exit) and the account status is set to `active`. Raises `LoginTimeoutError`
-    if the session is still on Google's sign-in page after `timeout` seconds.
-    """
-    _require_headful_login(backend)
-    async with backend.browser_context(account) as context:
-        page = await context.new_page()
-        try:
-            await page.goto(FLOW_URL)
-            try:
-                await page.wait_for_url(
-                    lambda url: LOGIN_REDIRECT_HOST not in url, timeout=timeout * 1000
-                )
-                logged_in = True
-            except PlaywrightTimeoutError:
-                logged_in = False
-        finally:
-            await page.close()
-
-    if not logged_in:
-        _log.error(
-            "google_flow_interactive_login_timed_out", account_email=account.email, timeout=timeout
-        )
-        raise LoginTimeoutError(
-            f"login for {account.email} did not complete within {timeout}s"
-        )
-    return manager.set_status(account.email, AccountStatus.ACTIVE)
-
-
-async def relogin(
-    email: str, manager: AccountManager, backend: BrowserBackend, *, timeout: float = 300.0
-) -> Account:
-    """Force a fresh interactive login for an existing account, discarding any stale session."""
-    account = manager.get(email)
-    return await interactive_login(account, manager, backend, timeout=timeout)
+_NETWORK_IDLE_TIMEOUT_MS = 10_000
+_SETTLE_TIMEOUT_SECONDS = 5.0
+_SETTLE_POLL_SECONDS = 0.5
 
 
 async def is_logged_in(context: BrowserContext, *, timeout: float = 15.0) -> bool:
@@ -81,9 +26,35 @@ async def is_logged_in(context: BrowserContext, *, timeout: float = 15.0) -> boo
     page = await context.new_page()
     try:
         await page.goto(FLOW_URL, timeout=timeout * 1000)
-        return LOGIN_REDIRECT_HOST not in page.url
+        return await probe_logged_in(page)
     finally:
         await page.close()
+
+
+async def probe_logged_in(page: Page) -> bool:
+    """True only once Flow's authenticated home actually renders the new-project button.
+
+    A negative check ("URL isn't accounts.google.com yet") false-positives instantly on a
+    fresh profile: Flow's SPA loads its shell before redirecting to Google sign-in via
+    client-side JS, so this must wait for that redirect (or the authenticated home) to
+    actually happen instead of trusting the URL at the instant `goto` returns — the same
+    trap already documented in `providers/perplexity/auth.py`.
+    """
+    if LOGIN_REDIRECT_HOST in page.url:
+        return False
+    try:
+        await page.wait_for_load_state("networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        pass
+    button = page.locator(sel.NEW_PROJECT_BUTTON)
+    deadline = time.monotonic() + _SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if LOGIN_REDIRECT_HOST in page.url:
+            return False
+        if await button.count() > 0:
+            return True
+        await asyncio.sleep(_SETTLE_POLL_SECONDS)
+    return False
 
 
 class GoogleFlowAuth:
@@ -104,36 +75,17 @@ class GoogleFlowAuth:
     async def is_logged_in(self, session: ProviderSession) -> bool:
         if session.page is not None:
             await session.page.goto(FLOW_URL, timeout=15 * 1000)
-            return LOGIN_REDIRECT_HOST not in session.page.url
+            return await probe_logged_in(session.page)
         async with self._backend.browser_context(session.account) as context:
             page = await context.new_page()
             try:
                 await page.goto(FLOW_URL, timeout=15 * 1000)
-                return LOGIN_REDIRECT_HOST not in page.url
+                return await probe_logged_in(page)
             finally:
                 await page.close()
 
     async def interactive_login(self, session: ProviderSession) -> bool:
-        _require_headful_login(self._backend)
-        async with self._backend.browser_context(session.account) as context:
-            page = await context.new_page()
-            try:
-                await page.goto(FLOW_URL)
-                try:
-                    await page.wait_for_url(
-                        lambda url: LOGIN_REDIRECT_HOST not in url, timeout=300 * 1000
-                    )
-                    return True
-                except PlaywrightTimeoutError:
-                    _log.error(
-                        "google_flow_interactive_login_timed_out",
-                        account_email=session.account.email,
-                        timeout=300.0,
-                        page_url=page.url,
-                    )
-                    return False
-            finally:
-                await page.close()
+        return await self._backend.interactive_login(session.account, FLOW_URL, probe_logged_in)
 
     async def probe_session(self, session: ProviderSession) -> bool:
         return await self.is_logged_in(session)

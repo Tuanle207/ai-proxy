@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
-
-from camoufox.async_api import AsyncCamoufox
-from playwright.async_api import Browser
 
 from ai_web_provider.core.accounts.manager import AccountManager
-from ai_web_provider.core.browser.camoufox_backend import CamoufoxBackend
+from ai_web_provider.core.browser.ungoogled_chromium_backend import UngoogledChromiumBackend
 from ai_web_provider.core.config import Settings
 from ai_web_provider.core.logging_setup import get_logger
 from ai_web_provider.core.provider import registry
@@ -17,6 +13,7 @@ from ai_web_provider.core.provider.runtime import ProviderRuntime
 from ai_web_provider.core.provider.session import ProviderRuntimeDeps
 from ai_web_provider.core.rotation.pool import AccountSlotPool
 from ai_web_provider.core.rotation.strategy import RoundRobinStrategy
+from ai_web_provider.runtime.ungoogled_chromium import UngoogledChromiumRuntimeManager
 
 _log = get_logger()
 
@@ -26,10 +23,10 @@ class ProviderRuntimeContainer:
         self.settings = settings
         self.paths = settings.paths
         registry.discover()
+        self._browser = UngoogledChromiumRuntimeManager(self.paths, settings.browser)
         self.runtimes = self._build_runtimes()
-        self._browser_cm: AsyncCamoufox | None = None
-        self._browser: Browser | None = None
         self._lifecycle_lock = asyncio.Lock()
+        self._started = False
 
     def _build_runtimes(self) -> dict[str, ProviderRuntime]:
         global_semaphore = asyncio.Semaphore(self.settings.max_concurrent_jobs)
@@ -38,7 +35,7 @@ class ProviderRuntimeContainer:
             spec = registry.get(name)
             provider_settings = spec.settings_model(**self.settings.provider_settings(name))
             accounts = AccountManager(self.paths, name)
-            backend = CamoufoxBackend(self.paths, name)
+            backend = UngoogledChromiumBackend(name, self._browser)
             per_account_limit = self.settings.per_account_concurrency
             per_account_limits = None
             if name == "google_flow":
@@ -72,32 +69,14 @@ class ProviderRuntimeContainer:
 
     async def startup(self) -> None:
         async with self._lifecycle_lock:
-            if self._browser is not None:
+            if self._started:
                 return
-            options: dict[str, Any] = {
-                "headless": self.settings.headless,
-                "humanize": True,
-                "block_images": False,
-            }
-            if self.settings.browser_window_width and self.settings.browser_window_height:
-                options["window"] = (
-                    self.settings.browser_window_width,
-                    self.settings.browser_window_height,
-                )
-            cm = AsyncCamoufox(**options)  # type: ignore[no-untyped-call]
-            browser = cast(Browser, await cm.__aenter__())
-            self._browser_cm = cm
-            self._browser = browser
-            for runtime in self.runtimes.values():
-                runtime.backend.set_browser(browser, headless=self.settings.headless)
+            await self._browser.startup()
+            self._started = True
 
     async def shutdown(self) -> None:
         async with self._lifecycle_lock:
             for runtime in self.runtimes.values():
                 await runtime.backend.close_all()
-                runtime.backend.set_browser(None)
-            cm = self._browser_cm
-            self._browser = None
-            self._browser_cm = None
-            if cm is not None:
-                await cm.__aexit__(None, None, None)
+            await self._browser.shutdown()
+            self._started = False

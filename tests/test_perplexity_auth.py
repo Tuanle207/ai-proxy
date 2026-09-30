@@ -13,12 +13,8 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
-
-from ai_web_provider.core.errors import GenerationTimeoutError
 from ai_web_provider.providers.perplexity import auth as auth_module
 from ai_web_provider.providers.perplexity.page import selectors as sel
-from ai_web_provider.providers.perplexity.page import wait as wait_module
 
 
 class FakeLocator:
@@ -88,14 +84,19 @@ def test_probe_false_off_perplexity(monkeypatch: Any) -> None:
     assert asyncio.run(auth_module.probe_logged_in(page)) is False
 
 
-def test_interactive_login_requires_headful_browser() -> None:
-    auth = auth_module.PerplexityAuth(
-        SimpleNamespace(
-            backend=SimpleNamespace(headless=True),
-            settings=SimpleNamespace(login_timeout=300.0),
-        )
-    )
-    session = SimpleNamespace(account=SimpleNamespace())
+def test_interactive_login_delegates_to_headed_chromium_backend() -> None:
+    async def run() -> None:
+        calls: list[tuple[object, str]] = []
 
-    with pytest.raises(auth_module.HeadlessLoginError, match="AI_PROXY_HEADLESS=false"):
-        asyncio.run(auth.interactive_login(session))
+        async def interactive_login(account: object, url: str, probe: object) -> bool:
+            calls.append((account, url))
+            return True
+
+        auth = auth_module.PerplexityAuth(
+            SimpleNamespace(backend=SimpleNamespace(interactive_login=interactive_login))
+        )
+        account = SimpleNamespace(email="account@example.com")
+        assert await auth.interactive_login(SimpleNamespace(account=account))
+        assert calls == [(account, sel.PERPLEXITY_URL)]
+
+    asyncio.run(run())

@@ -42,7 +42,8 @@ class ProviderExecutor:
         attempted: set[str] = set()
         attempts: list[AttemptRecord] = []
         last_error: Exception | None = None
-        model = request.params.get("model") if isinstance(request.params.get("model"), str) else None
+        model_value = request.params.get("model")
+        model = model_value if isinstance(model_value, str) else None
         for attempt in range(1, self._container.settings.max_retries + 1):
             slot = await runtime.pool.acquire(exclude=frozenset(attempted), model=model)
             attempted.add(slot.email)
@@ -96,9 +97,22 @@ class ProviderExecutor:
         account = runtime.accounts.get(email)
         async with runtime.backend.browser_context(account) as context:
             page = await context.new_page()
+            browser_settings = self._container.settings.browser
+            await page.set_viewport_size(
+                {
+                    "width": browser_settings.viewport_width,
+                    "height": browser_settings.viewport_height,
+                }
+            )
             recorder = diagnostics.PageEventRecorder().attach(page)
             try:
-                session = ProviderSession(account, page, self._container.paths, self._container.paths.outputs_dir, runtime.settings)
+                session = ProviderSession(
+                    account,
+                    page,
+                    self._container.paths,
+                    self._container.paths.outputs_dir,
+                    runtime.settings,
+                )
                 result: TaskResult = await runtime.adapter.execute(session, request)
                 return result
             except Exception as error:
@@ -175,9 +189,13 @@ class ProviderExecutor:
         if policy.account_effect is AccountEffect.NEEDS_LOGIN:
             await runtime.accounts.set_status_async(email, AccountStatus.NEEDS_LOGIN)
         elif policy.account_effect is AccountEffect.COOLDOWN:
-            await runtime.accounts.set_cooldown_async(email, timedelta(minutes=self._container.settings.cooldown_minutes))
+            await runtime.accounts.set_cooldown_async(
+                email, timedelta(minutes=self._container.settings.cooldown_minutes)
+            )
         elif policy.account_effect is AccountEffect.QUOTA_COOLDOWN:
-            await runtime.accounts.set_cooldown_async(email, timedelta(minutes=self._container.settings.quota_cooldown_minutes))
+            await runtime.accounts.set_cooldown_async(
+                email, timedelta(minutes=self._container.settings.quota_cooldown_minutes)
+            )
         elif policy.account_effect is AccountEffect.MODEL_QUOTA_COOLDOWN and policy.model:
             await runtime.accounts.set_model_cooldown_async(email, policy.model)
         return record, policy

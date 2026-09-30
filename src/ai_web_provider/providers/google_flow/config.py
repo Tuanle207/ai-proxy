@@ -1,16 +1,12 @@
-"""Google Flow provider settings (AI_PROXY_GOOGLE_FLOW_*), resolved from env + YAML."""
+"""Google Flow provider settings supplied by the embedding application."""
 
 from __future__ import annotations
-
-from pydantic_settings import SettingsConfigDict
 
 from ai_web_provider.core.config import ProviderSettings
 
 
 class GoogleFlowSettings(ProviderSettings):
     """Flow-specific keys that left core config in Phase 3.6."""
-
-    model_config = SettingsConfigDict(env_prefix="AI_PROXY_GOOGLE_FLOW_", extra="ignore")
 
     logo_path: str | None = None
     quota_cooldown_minutes: int = 120

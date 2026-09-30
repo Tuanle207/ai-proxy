@@ -54,7 +54,7 @@ SEARCH_URL_MARKER = "/search/"
 # Logged-in marker: the notification bell (`#pplx-icon-bell`) only renders for authenticated
 # users. Its `<use>` references the icon via `xlink:href`, a *namespaced* attribute — plain
 # `[href=...]` and escaped `[xlink\:href=...]` do NOT match it (verified live); the any-namespace
-# attribute selector `[*|href=...]` does (verified against Camoufox 2026-08-17).
+# attribute selector `[*|href=...]` does (verified live 2026-08-17).
 LOGGED_IN_BELL = "use[*|href='#pplx-icon-bell']"
 
 # The streaming "stop" control (square icon button), confirmed via recon.

@@ -16,11 +16,9 @@ from ai_web_provider.providers.perplexity.page import selectors as sel
 _log = get_logger()
 
 # Swaps in a stub for `navigator.clipboard.writeText` *before* clicking Copy, so the payload is
-# captured in-page: no OS clipboard permissions (Camoufox/Firefox cannot grant `clipboard-read`
-# in headless) and no race reading the real clipboard afterward. Uses `Object.defineProperty` to
-# replace the whole `navigator.clipboard` object rather than assigning `.writeText` directly,
-# since Camoufox's anti-fingerprinting hardening can make the live property non-writable (a plain
-# assignment then silently no-ops and the hook never fires).
+# captured in-page: no OS clipboard permissions are needed and there is no race reading the real
+# clipboard afterward. Replacing the whole `navigator.clipboard` object is more reliable than
+# assigning `.writeText` directly, which some browser implementations expose as non-writable.
 _HOOK_COPY_JS = """() => {
   window.__pplx_copy = null;
   Object.defineProperty(navigator, 'clipboard', {

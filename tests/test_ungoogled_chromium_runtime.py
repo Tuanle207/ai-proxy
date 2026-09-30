@@ -49,6 +49,9 @@ class _Playwright:
     def __init__(self) -> None:
         self.chromium = _Chromium()
 
+    async def stop(self) -> None:
+        return None
+
 
 def test_contexts_restore_the_requested_account_cookies(tmp_path) -> None:
     async def run() -> None:

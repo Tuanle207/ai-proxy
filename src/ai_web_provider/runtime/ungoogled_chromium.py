@@ -7,6 +7,7 @@ import json
 import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any, cast
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
@@ -77,7 +78,7 @@ class UngoogledChromiumRuntimeManager:
         async with self._account_lock(provider, account):
             browser = await self._browser_for_context()
             cookies = self._cookies_for(provider, account.email)
-            context = await browser.new_context(storage_state={"cookies": cookies})
+            context = await browser.new_context(storage_state=cast(Any, {"cookies": cookies}))
             async with self._lock:
                 self._contexts.add(context)
                 self._context_accounts[context] = (provider, account.email)
@@ -158,7 +159,8 @@ class UngoogledChromiumRuntimeManager:
                         return False
                     await asyncio.sleep(0.5)
                 self._write_cookies(
-                    self._paths.storage_state_file(provider, account.email), await context.cookies()
+                    self._paths.storage_state_file(provider, account.email),
+                    cast(list[dict[str, object]], await context.cookies()),
                 )
                 return True
             finally:

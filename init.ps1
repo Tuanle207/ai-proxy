@@ -1,1 +1,0 @@
-.\.venv\Scripts\python.exe src/ai_proxy/core/service/app.py --port 5002
